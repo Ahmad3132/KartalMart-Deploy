@@ -1,104 +1,175 @@
 import React, { useState, useEffect } from 'react';
-import { formatDate } from '../../utils/api';
+import { Plus, Check, X } from 'lucide-react';
 
 export default function CampaignSetup() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
-  const [form, setForm] = useState({ name: '', start_date: '', end_date: '', status: 'Active' });
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
-  const token = localStorage.getItem('kartal_token');
-  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const [name, setName] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [status, setStatus] = useState('Active');
 
-  const fetch_ = async () => {
-    const res = await fetch('/api/campaigns', { headers: { 'Authorization': `Bearer ${token}` } });
-    const data = await res.json();
-    setCampaigns(Array.isArray(data) ? data : []);
-    setLoading(false);
+  const fetchCampaigns = () => {
+    fetch('/api/campaigns', {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
+    })
+      .then(async res => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to fetch campaigns');
+        }
+        return res.json().catch(() => []);
+      })
+      .then(data => setCampaigns(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error('Campaigns fetch error:', err);
+        setCampaigns([]);
+      });
   };
 
-  useEffect(() => { fetch_(); }, []);
+  useEffect(() => {
+    fetchCampaigns();
+  }, []);
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      if (editItem) {
-        await fetch(`/api/campaigns/${editItem.id}/status`, { method: 'PUT', headers, body: JSON.stringify(form) });
-      } else {
-        await fetch('/api/campaigns', { method: 'POST', headers, body: JSON.stringify(form) });
-      }
-      setMessage({ type: 'success', text: `Campaign ${editItem ? 'updated' : 'created'}.` });
-      setShowForm(false); setEditItem(null); setForm({ name: '', start_date: '', end_date: '', status: 'Active' });
-      fetch_();
-    } catch (err: any) { setMessage({ type: 'error', text: err.message }); }
-    setSaving(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await fetch('/api/campaigns', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+      },
+      body: JSON.stringify({ name, start_date: startDate, end_date: endDate, status }),
+    });
+    setName('');
+    setStartDate('');
+    setEndDate('');
+    fetchCampaigns();
   };
 
-  const del = async (id: number) => {
-    if (!confirm('Delete this campaign?')) return;
-    await fetch(`/api/campaigns/${id}`, { method: 'DELETE', headers });
-    fetch_();
+  const updateStatus = async (id: number, newStatus: string) => {
+    await fetch(`/api/campaigns/${id}/status`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+      },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    fetchCampaigns();
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
-        <div><h1 style={{ fontFamily: 'Syne', fontSize: '26px', fontWeight: '800' }}>Campaigns</h1><p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '3px' }}>Manage lucky draw campaigns.</p></div>
-        <button className="btn btn-primary" onClick={() => { setShowForm(true); setEditItem(null); }}>+ New Campaign</button>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Campaign Setup</h1>
+        <p className="mt-1 text-sm text-gray-500">Create and manage lucky draw campaigns.</p>
       </div>
 
-      {message && <div className={`alert alert-${message.type}`} style={{ marginBottom: '20px' }}>{message.text}<button onClick={() => setMessage(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button></div>}
-
-      {loading ? <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}><div className="spinner" /></div> : (
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Start</th><th>End</th><th>Tickets</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-              {campaigns.map(c => (
-                <tr key={c.id}>
-                  <td style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{c.name}</td>
-                  <td>{c.start_date || '—'}</td>
-                  <td>{c.end_date || '—'}</td>
-                  <td style={{ color: 'var(--accent)', fontWeight: '700' }}>{c.counter}</td>
-                  <td><span className={`badge badge-${c.status === 'Active' ? 'active' : 'closed'}`}>{c.status}</span></td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => { setEditItem(c); setForm({ name: c.name, start_date: c.start_date || '', end_date: c.end_date || '', status: c.status }); setShowForm(true); }}>Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => del(c.id)}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '24px' }}>
-          <div className="card" style={{ padding: '32px', maxWidth: '440px', width: '100%' }}>
-            <h3 style={{ fontFamily: 'Syne', fontSize: '18px', fontWeight: '700', marginBottom: '24px' }}>{editItem ? 'Edit Campaign' : 'New Campaign'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div><label className="label">Campaign Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-              <div className="grid-2">
-                <div><label className="label">Start Date</label><input className="input" type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} /></div>
-                <div><label className="label">End Date</label><input className="input" type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} /></div>
-              </div>
-              <div><label className="label">Status</label>
-                <select className="input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-                  <option value="Active">Active</option><option value="Closed">Closed</option>
-                </select>
-              </div>
+      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+        <div className="p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Create New Campaign</h2>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Campaign Name</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              />
             </div>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? <span className="spinner" /> : 'Save'}</button>
-              <button className="btn btn-ghost" onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
+            
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              >
+                <option value="Active">Active</option>
+                <option value="Closed">Closed</option>
+              </select>
             </div>
-          </div>
+
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Start Date</label>
+              <input
+                type="date"
+                required
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              />
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">End Date</label>
+              <input
+                type="date"
+                required
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              />
+            </div>
+
+            <div className="sm:col-span-6">
+              <button
+                type="submit"
+                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Create Campaign
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </div>
+
+      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">All Campaigns</h3>
+        </div>
+        <ul className="divide-y divide-gray-200">
+          {campaigns.map((campaign) => (
+            <li key={campaign.id} className="px-4 py-4 sm:px-6 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-indigo-600 truncate">{campaign.name}</p>
+                <p className="mt-1 text-sm text-gray-500">
+                  {campaign.start_date} to {campaign.end_date} &middot; Counter: {campaign.counter}
+                </p>
+              </div>
+              <div className="flex items-center space-x-4">
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                  campaign.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {campaign.status}
+                </span>
+                {campaign.status !== 'Active' && (
+                  <button
+                    onClick={() => updateStatus(campaign.id, 'Active')}
+                    className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                  >
+                    Activate
+                  </button>
+                )}
+                {campaign.status === 'Active' && (
+                  <button
+                    onClick={() => updateStatus(campaign.id, 'Closed')}
+                    className="text-red-600 hover:text-red-900 text-sm font-medium"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+          {campaigns.length === 0 && (
+            <li className="px-4 py-4 sm:px-6 text-sm text-gray-500 text-center">No campaigns found.</li>
+          )}
+        </ul>
+      </div>
     </div>
   );
 }

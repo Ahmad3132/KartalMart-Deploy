@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const navItems = [
@@ -17,108 +17,110 @@ const navItems = [
   { to: '/admin/settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
 ];
 
+const Icon = ({ d }: { d: string }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+    <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+  </svg>
+);
+
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [pendingCount, setPendingCount] = useState(0);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
   useEffect(() => {
     const fetchPending = async () => {
       try {
-        const res = await fetch('/api/transactions/pending', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
-        });
+        const res = await fetch('/api/transactions/pending', { headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
         const data = await res.json();
         if (Array.isArray(data)) setPendingCount(data.length);
       } catch {}
     };
     fetchPending();
-    const interval = setInterval(fetchPending, 30000);
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchPending, 30000);
+    return () => clearInterval(iv);
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
+
+  const SidebarContent = () => (
+    <>
+      <div style={{ padding: '20px 14px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff' }}>{user?.name || user?.nick_name || user?.email?.split('@')[0]}</div>
+        <div style={{ fontSize: '11px', color: '#a78bfa', marginTop: '1px' }}>Administrator</div>
+      </div>
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 8px' }}>
+        {navItems.map(item => (
+          <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Icon d={item.icon} />
+            <span>{item.label}</span>
+            {item.badge === 'pending' && pendingCount > 0 && (
+              <span style={{ marginLeft: 'auto', background: '#f59e0b', color: '#000', fontSize: '10px', fontWeight: '800', padding: '1px 7px', borderRadius: '10px' }}>{pendingCount}</span>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+      <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '12px 8px', marginTop: '8px' }}>
+        <button onClick={handleLogout} className="nav-item" style={{ width: '100%', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <Icon d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          Sign Out
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Sidebar */}
-      <div className="sidebar">
+      {/* Desktop sidebar */}
+      <div className="sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
         {/* Logo */}
-        <div style={{ marginBottom: '28px', paddingLeft: '4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '36px', height: '36px',
-              background: 'linear-gradient(135deg, #6c63ff, #a78bfa)',
-              borderRadius: '10px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
-              </svg>
-            </div>
-            <div>
-              <div style={{ fontFamily: 'Syne', fontWeight: '800', fontSize: '15px', color: '#fff' }}>KARTAL</div>
-              <div style={{ fontSize: '10px', color: '#a78bfa', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admin Panel</div>
-            </div>
+        <div style={{ padding: '20px 14px 0', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '34px', height: '34px', background: 'linear-gradient(135deg, #6c63ff, #a78bfa)', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
+          </div>
+          <div>
+            <div style={{ fontFamily: 'Syne', fontWeight: '800', fontSize: '14px', color: '#fff' }}>KARTAL</div>
+            <div style={{ fontSize: '9px', color: '#a78bfa', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Admin Panel</div>
           </div>
         </div>
+        <SidebarContent />
+      </div>
 
-        {/* User info */}
-        <div style={{ padding: '10px 11px', marginBottom: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '9px', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff' }}>
-            {user?.name || user?.nick_name || user?.email?.split('@')[0]}
+      {/* Mobile topbar */}
+      <div style={{ display: 'none', position: 'fixed', top: 0, left: 0, right: 0, height: '56px', background: '#1e1b3a', zIndex: 200, alignItems: 'center', padding: '0 16px', gap: '12px' }} className="mobile-topbar">
+        <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg, #6c63ff, #a78bfa)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
+        </div>
+        <span style={{ fontFamily: 'Syne', fontWeight: '800', color: '#fff', fontSize: '15px', flex: 1 }}>KARTAL</span>
+        {pendingCount > 0 && <span style={{ background: '#f59e0b', color: '#000', fontSize: '11px', fontWeight: '800', padding: '2px 8px', borderRadius: '10px' }}>{pendingCount}</span>}
+        <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: '4px' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d={mobileOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} /></svg>
+        </button>
+      </div>
+
+      {/* Mobile drawer */}
+      {mobileOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 150 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMobileOpen(false)} />
+          <div style={{ position: 'absolute', top: 56, left: 0, bottom: 0, width: '260px', background: '#1e1b3a', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+            <SidebarContent />
           </div>
-          <div style={{ fontSize: '11px', color: '#a78bfa', marginTop: '1px' }}>Administrator</div>
         </div>
+      )}
 
-        {/* Nav */}
-        <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {navItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon}/>
-              </svg>
-              <span>{item.label}</span>
-              {item.badge === 'pending' && pendingCount > 0 && (
-                <span style={{
-                  marginLeft: 'auto', background: '#f59e0b', color: '#000',
-                  fontSize: '10px', fontWeight: '800', padding: '1px 7px', borderRadius: '10px'
-                }}>
-                  {pendingCount}
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </nav>
+      <div className="main-content fade-up"><Outlet /></div>
 
-        {/* Logout */}
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '14px', marginTop: '14px' }}>
-          <button
-            onClick={handleLogout}
-            className="nav-item"
-            style={{ width: '100%', justifyContent: 'flex-start', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-            </svg>
-            Sign Out
-          </button>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="main-content fade-up">
-        <Outlet />
-      </div>
+      <style>{`
+        @media (max-width: 900px) {
+          .sidebar { display: none !important; }
+          .mobile-topbar { display: flex !important; }
+          .main-content { margin-left: 0 !important; margin-top: 56px !important; }
+        }
+      `}</style>
     </div>
   );
 }

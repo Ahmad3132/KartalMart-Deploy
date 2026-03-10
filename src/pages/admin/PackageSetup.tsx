@@ -1,98 +1,181 @@
 import React, { useState, useEffect } from 'react';
+import { Plus, Package } from 'lucide-react';
 
 export default function PackageSetup() {
   const [packages, setPackages] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null);
-  const [form, setForm] = useState({ name: '', amount: '', ticket_count: '', status: 'Active' });
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
-  const token = localStorage.getItem('kartal_token');
-  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [ticketCount, setTicketCount] = useState('');
+  const [status, setStatus] = useState('Active');
 
-  const fetch_ = async () => {
-    const res = await fetch('/api/packages', { headers: { 'Authorization': `Bearer ${token}` } });
-    const data = await res.json();
-    setPackages(Array.isArray(data) ? data : []);
-    setLoading(false);
+  const fetchPackages = () => {
+    fetch('/api/packages', {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
+    })
+      .then(async res => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to fetch packages');
+        }
+        return res.json().catch(() => []);
+      })
+      .then(data => setPackages(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error('Packages fetch error:', err);
+        setPackages([]);
+      });
   };
 
-  useEffect(() => { fetch_(); }, []);
+  useEffect(() => {
+    fetchPackages();
+  }, []);
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      const body = { ...form, amount: Number(form.amount), ticket_count: Number(form.ticket_count) };
-      if (editItem) {
-        await fetch(`/api/packages/${editItem.id}/status`, { method: 'PUT', headers, body: JSON.stringify(body) });
-      } else {
-        await fetch('/api/packages', { method: 'POST', headers, body: JSON.stringify(body) });
-      }
-      setMessage({ type: 'success', text: `Package ${editItem ? 'updated' : 'created'}.` });
-      setShowForm(false); setEditItem(null); setForm({ name: '', amount: '', ticket_count: '', status: 'Active' });
-      fetch_();
-    } catch (err: any) { setMessage({ type: 'error', text: err.message }); }
-    setSaving(false);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await fetch('/api/packages', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+      },
+      body: JSON.stringify({ name, amount: parseFloat(amount), ticket_count: parseInt(ticketCount), status }),
+    });
+    setName('');
+    setAmount('');
+    setTicketCount('');
+    fetchPackages();
   };
 
-  const del = async (id: number) => {
-    if (!confirm('Delete this package?')) return;
-    await fetch(`/api/packages/${id}`, { method: 'DELETE', headers });
-    fetch_();
+  const updateStatus = async (id: number, newStatus: string) => {
+    await fetch(`/api/packages/${id}/status`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+      },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    fetchPackages();
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
-        <div><h1 style={{ fontFamily: 'Syne', fontSize: '26px', fontWeight: '800' }}>Packages</h1><p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '3px' }}>Set the purchase tiers customers can choose from.</p></div>
-        <button className="btn btn-primary" onClick={() => { setShowForm(true); setEditItem(null); }}>+ New Package</button>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Package Setup</h1>
+        <p className="mt-1 text-sm text-gray-500">Manage pricing packages for ticket generation.</p>
       </div>
 
-      {message && <div className={`alert alert-${message.type}`} style={{ marginBottom: '20px' }}>{message.text}<button onClick={() => setMessage(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button></div>}
-
-      {loading ? <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}><div className="spinner" /></div> : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-          {packages.map(p => (
-            <div key={p.id} className="card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <span className={`badge badge-${p.status === 'Active' ? 'active' : 'closed'}`}>{p.status}</span>
-              </div>
-              <div style={{ fontFamily: 'Syne', fontSize: '28px', fontWeight: '800', color: 'var(--accent)' }}>PKR {Number(p.amount).toLocaleString()}</div>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', margin: '4px 0' }}>{p.name}</div>
-              <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{p.ticket_count} ticket{p.ticket_count > 1 ? 's' : ''}</div>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => { setEditItem(p); setForm({ name: p.name, amount: String(p.amount), ticket_count: String(p.ticket_count), status: p.status }); setShowForm(true); }}>Edit</button>
-                <button className="btn btn-danger btn-sm" onClick={() => del(p.id)}>Delete</button>
-              </div>
+      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+        <div className="p-6">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Create New Package</h2>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Package Name</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              />
             </div>
+            
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Amount (PKR)</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              />
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-gray-700">Ticket Count</label>
+              <input
+                type="number"
+                required
+                value={ticketCount}
+                onChange={(e) => setTicketCount(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+              />
+            </div>
+
+            <div className="sm:col-span-6">
+              <button
+                type="submit"
+                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Create Package
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">All Packages</h3>
+        </div>
+        <ul className="divide-y divide-gray-200">
+          {packages.map((pkg) => (
+            <li key={pkg.id} className="px-4 py-4 sm:px-6 flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Package className="h-6 w-6 text-gray-400" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-indigo-600 truncate">{pkg.name}</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Amount: PKR {pkg.amount} &middot; Tickets: {pkg.ticket_count}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                  pkg.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {pkg.status}
+                </span>
+                {pkg.status !== 'Active' && (
+                  <button
+                    onClick={() => updateStatus(pkg.id, 'Active')}
+                    className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                  >
+                    Activate
+                  </button>
+                )}
+                {pkg.status === 'Active' && (
+                  <button
+                    onClick={() => updateStatus(pkg.id, 'Inactive')}
+                    className="text-red-600 hover:text-red-900 text-sm font-medium"
+                  >
+                    Deactivate
+                  </button>
+                )}
+              </div>
+            </li>
           ))}
-        </div>
-      )}
-
-      {showForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '24px' }}>
-          <div className="card" style={{ padding: '32px', maxWidth: '400px', width: '100%' }}>
-            <h3 style={{ fontFamily: 'Syne', fontSize: '18px', fontWeight: '700', marginBottom: '24px' }}>{editItem ? 'Edit Package' : 'New Package'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div><label className="label">Package Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Premium Package" /></div>
-              <div className="grid-2">
-                <div><label className="label">Amount (PKR)</label><input className="input" type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="500" /></div>
-                <div><label className="label">Tickets</label><input className="input" type="number" value={form.ticket_count} onChange={e => setForm(f => ({ ...f, ticket_count: e.target.value }))} placeholder="1" /></div>
-              </div>
-              <div><label className="label">Status</label>
-                <select className="input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-                  <option value="Active">Active</option><option value="Inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? <span className="spinner" /> : 'Save'}</button>
-              <button className="btn btn-ghost" onClick={() => { setShowForm(false); setEditItem(null); }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+          {packages.length === 0 && (
+            <li className="px-4 py-4 sm:px-6 text-sm text-gray-500 text-center">No packages found.</li>
+          )}
+        </ul>
+      </div>
     </div>
   );
 }

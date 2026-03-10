@@ -256,3 +256,49 @@ tbody tr:hover { background: var(--bg-elevated); }
   .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
 }
+/* v3-fresh-build */
+
+/* ============ MOBILE RESPONSIVE ============ */
+@media (max-width: 900px) {
+  .sidebar {
+    width: 100%;
+    min-height: auto;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 12px;
+    height: 56px;
+    z-index: 100;
+    overflow: visible;
+  }
+  .sidebar nav {
+    display: none;
+  }
+  .sidebar .mobile-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+  }
+  .main-content {
+    margin-left: 0;
+    margin-top: 56px;
+    padding: 16px;
+  }
+  .grid-2, .grid-3, .grid-4 {
+    grid-template-columns: 1fr !important;
+  }
+  .stat-card { padding: 16px; }
+  .page-header h1 { font-size: 20px; }
+  .table-wrap { border-radius: 8px; }
+  thead th, tbody td { padding: 8px 10px; font-size: 12px; }
+  .btn { padding: 8px 14px; font-size: 13px; }
+  .card { border-radius: 10px; }
+}
+
+@media (max-width: 600px) {
+  .main-content { padding: 12px; }
+  .hide-mobile { display: none !important; }
+  .input { font-size: 16px; } /* prevents iOS zoom */
+}

@@ -1,139 +1,120 @@
 import React, { useState, useEffect } from 'react';
-import { formatPKR, formatDate } from '../../utils/api';
+import { Check, AlertCircle, Eye } from 'lucide-react';
 
 export default function PendingApprovals() {
   const [pending, setPending] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [rejectReason, setRejectReason] = useState<{[id: number]: string}>({});
-  const [showRejectFor, setShowRejectFor] = useState<number | null>(null);
-  const [message, setMessage] = useState<{type: string, text: string} | null>(null);
 
-  const token = localStorage.getItem('kartal_token');
-  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-
-  const fetchPending = async () => {
-    try {
-      const res = await fetch('/api/transactions/pending', { headers: { 'Authorization': `Bearer ${token}` } });
-      const data = await res.json();
-      setPending(Array.isArray(data) ? data : []);
-    } catch { setPending([]); } finally { setLoading(false); }
-  };
-
-  useEffect(() => { fetchPending(); }, []);
-
-  const approve = async (id: number) => {
-    setActionLoading(id);
-    try {
-      const res = await fetch(`/api/transactions/${id}/approve`, { method: 'PUT', headers });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setMessage({ type: 'success', text: 'Transaction approved and tickets generated.' });
-      fetchPending();
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
-    } finally { setActionLoading(null); }
-  };
-
-  const reject = async (id: number) => {
-    setActionLoading(id);
-    try {
-      const res = await fetch(`/api/transactions/${id}/reject`, {
-        method: 'PUT', headers,
-        body: JSON.stringify({ reason: rejectReason[id] || 'Rejected by admin' })
+  const fetchPending = () => {
+    fetch('/api/transactions/pending', {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+      }
+    })
+      .then(async res => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to fetch pending transactions');
+        }
+        return res.json().catch(() => []);
+      })
+      .then(data => setPending(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error('Pending fetch error:', err);
+        setPending([]);
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setMessage({ type: 'success', text: 'Transaction rejected.' });
-      setShowRejectFor(null);
-      fetchPending();
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
-    } finally { setActionLoading(null); }
+  };
+
+  useEffect(() => {
+    fetchPending();
+  }, []);
+
+  const approveTransaction = async (id: number) => {
+    await fetch(`/api/transactions/${id}/approve`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+      }
+    });
+    fetchPending();
   };
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>Pending Approvals</h1>
-        <p>Review, approve or reject transactions awaiting action.</p>
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Pending Approvals</h1>
+        <p className="mt-1 text-sm text-gray-500">Review and approve duplicate transactions.</p>
       </div>
 
-      {message && (
-        <div className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: '24px' }}>
-          {message.text}
-          <button onClick={() => setMessage(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Duplicate Transactions</h3>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+            {pending.length} Pending
+          </span>
         </div>
-      )}
-
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}><div className="spinner" /></div>
-      ) : pending.length === 0 ? (
-        <div className="card" style={{ padding: '60px', textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>✓</div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>All caught up — no pending approvals</div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {pending.map(tx => (
-            <div key={tx.id} className="card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                    <span className="badge badge-pending">Pending</span>
-                    {tx.is_multi_person === 1 && <span className="badge" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(108,99,255,0.2)' }}>Multi-Person</span>}
-                    <span style={{ fontFamily: 'monospace', fontSize: '13px', color: 'var(--text-primary)', fontWeight: '600' }}>{tx.tx_id}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '8px' }}>
-                    {[
-                      ['User', tx.user_email],
-                      ['Amount', formatPKR(tx.amount)],
-                      ['Tickets', tx.ticket_count],
-                      ['Payment', tx.payment_type],
-                      ['Date', formatDate(tx.date)],
-                      tx.name && ['Customer', tx.name],
-                    ].filter(Boolean).map(([k, v]: any) => (
-                      <div key={k}>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k}</span>
-                        <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>{v}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {tx.receipt_url && (
-                    <a href={tx.receipt_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '12px', fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontWeight: '600' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                      View Receipt
-                    </a>
-                  )}
-                  {showRejectFor === tx.id && (
-                    <div style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-elevated)', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                      <label className="label">Rejection Reason (optional)</label>
-                      <input className="input" placeholder="e.g. Invalid receipt" value={rejectReason[tx.id] || ''} onChange={e => setRejectReason(r => ({ ...r, [tx.id]: e.target.value }))} />
+        
+        {pending.length > 0 ? (
+          <ul className="divide-y divide-gray-200">
+            {pending.map((tx) => (
+              <li key={tx.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-start space-x-4">
+                    <div className="flex-shrink-0 mt-1">
+                      <AlertCircle className="h-6 w-6 text-orange-500" />
                     </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '160px' }}>
-                  <button className="btn btn-success btn-sm" onClick={() => approve(tx.id)} disabled={actionLoading === tx.id}>
-                    {actionLoading === tx.id ? <span className="spinner" style={{ width: '14px', height: '14px' }} /> : '✓ Approve'}
-                  </button>
-                  {showRejectFor === tx.id ? (
-                    <button className="btn btn-danger btn-sm" onClick={() => reject(tx.id)} disabled={actionLoading === tx.id}>
-                      Confirm Reject
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        Transaction ID: <span className="font-mono">{tx.tx_id}</span>
+                      </p>
+                      <div className="mt-1 text-sm text-gray-500 space-y-1">
+                        <p>User: {tx.user_email}</p>
+                        <p>Amount: PKR {tx.amount} &middot; Tickets: {tx.ticket_count}</p>
+                        <p>Payment: {tx.payment_type} {tx.receipt_url && <a href={tx.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-600 underline ml-1">View Receipt</a>}</p>
+                        <p>Date: {new Date(tx.date).toLocaleString()}</p>
+                        {tx.is_multi_person === 1 && (
+                          <div className="mt-2 p-2 bg-indigo-50 rounded border border-indigo-100">
+                            <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1">Multi-Person Transaction</p>
+                            <p className="text-xs text-indigo-600 italic">Tickets will be generated for each participant upon approval.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">
+                      Pending
+                    </span>
+                    {tx.receipt_url && (
+                      <a
+                        href={tx.receipt_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        View Receipt
+                      </a>
+                    )}
+                    <button
+                      onClick={() => approveTransaction(tx.id)}
+                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      <Check className="w-4 h-4 mr-1" />
+                      Approve
                     </button>
-                  ) : (
-                    <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => setShowRejectFor(tx.id)}>
-                      ✕ Reject
-                    </button>
-                  )}
-                  {showRejectFor === tx.id && (
-                    <button className="btn btn-ghost btn-sm" onClick={() => setShowRejectFor(null)}>Cancel</button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="px-4 py-12 text-center">
+            <Check className="mx-auto h-12 w-12 text-gray-300" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">All caught up</h3>
+            <p className="mt-1 text-sm text-gray-500">No pending transactions require approval.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
