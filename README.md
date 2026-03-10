@@ -1,1 +1,0 @@
-# Kartal_G
