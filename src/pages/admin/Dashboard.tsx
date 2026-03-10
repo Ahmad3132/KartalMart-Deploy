@@ -1,62 +1,125 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { formatPKR } from '../../utils/api';
-
-interface Stats { activeCampaign: string; ticketsToday: number; ticketsMonth: number; pendingApprovals: number; totalRevenue: number; totalUsers: number; }
+import { useNavigate } from 'react-router-dom';
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<any>({});
+  const [pending, setPending] = useState<any[]>([]);
+  const [recent, setRecent] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const token = localStorage.getItem('kartal_token');
+  const h = { 'Authorization': `Bearer ${token}` };
 
   useEffect(() => {
-    fetch('/api/stats/admin', { headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } })
-      .then(r => r.json()).then(setStats).catch(() => setError('Failed to load stats')).finally(() => setLoading(false));
+    Promise.all([
+      fetch('/api/dashboard/stats', { headers: h }).then(r => r.json()).catch(() => ({})),
+      fetch('/api/transactions/pending', { headers: h }).then(r => r.json()).catch(() => []),
+      fetch('/api/tickets?limit=5', { headers: h }).then(r => r.json()).catch(() => ({ tickets: [] })),
+    ]).then(([s, p, t]) => {
+      setStats(s);
+      setPending(Array.isArray(p) ? p.slice(0, 3) : []);
+      setRecent(Array.isArray(t.tickets) ? t.tickets.slice(0, 5) : []);
+      setLoading(false);
+    });
   }, []);
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px' }}><div className="spinner" /></div>;
-  if (error) return <div className="alert alert-error">{error}</div>;
-
   const statCards = [
-    { label: 'Active Campaign', value: stats?.activeCampaign || 'None', accent: 'var(--accent)', icon: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z' },
-    { label: 'Tickets Today', value: stats?.ticketsToday || 0, accent: 'var(--info)', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
-    { label: 'Tickets This Month', value: stats?.ticketsMonth || 0, accent: 'var(--success)', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
-    { label: 'Pending Approvals', value: stats?.pendingApprovals || 0, accent: 'var(--warning)', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-    { label: 'Total Revenue', value: formatPKR(stats?.totalRevenue || 0), accent: 'var(--success)', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-    { label: 'Total Staff', value: stats?.totalUsers || 0, accent: 'var(--accent)', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
+    { label: 'Total Tickets', value: stats.totalTickets || 0, icon: '🎟️', color: 'var(--accent)' },
+    { label: 'Today Tickets', value: stats.todayTickets || 0, icon: '📅', color: 'var(--info)' },
+    { label: 'Total Revenue', value: formatPKR(stats.totalRevenue || 0), icon: '💰', color: 'var(--success)' },
+    { label: 'Today Revenue', value: formatPKR(stats.todayRevenue || 0), icon: '📈', color: 'var(--warning)' },
+    { label: 'Pending Approvals', value: stats.pendingCount || 0, icon: '⏳', color: 'var(--danger)', alert: true },
+    { label: 'Active Campaign', value: stats.activeCampaign || '—', icon: '🏆', color: 'var(--accent)', isText: true },
   ];
+
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+      <div className="spinner" style={{ width: '36px', height: '36px', borderWidth: '3px' }} />
+    </div>
+  );
 
   return (
     <div>
       <div className="page-header">
-        <h1>Dashboard</h1>
-        <p>Welcome back. Here's what's happening today.</p>
+        <h1>Welcome back, {user?.name || user?.nick_name || 'Admin'} 👋</h1>
+        <p>Here's what's happening with your lucky draw today.</p>
       </div>
 
+      {(stats.pendingCount > 0) && (
+        <div className="alert alert-warning" style={{ marginBottom: '24px', cursor: 'pointer' }} onClick={() => navigate('/admin/approvals')}>
+          <span>⚠️</span>
+          <span><strong>{stats.pendingCount} transaction{stats.pendingCount > 1 ? 's' : ''}</strong> waiting for your approval.</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--warning)', fontWeight: '600' }}>Review →</span>
+        </div>
+      )}
+
+      {/* Stat Cards */}
       <div className="grid-3" style={{ marginBottom: '32px' }}>
         {statCards.map((s, i) => (
-          <div key={i} className="stat-card" style={{ '--accent': s.accent } as any}>
+          <div key={i} className="stat-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>{s.label}</div>
-                <div style={{ fontSize: '28px', fontFamily: 'Syne', fontWeight: '800', color: 'var(--text-primary)' }}>{s.value}</div>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '8px' }}>{s.label}</div>
+                <div style={{ fontSize: s.isText ? '18px' : '32px', fontFamily: 'Syne', fontWeight: '800', color: s.alert && s.value > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+                  {s.value}
+                </div>
               </div>
-              <div style={{ width: '40px', height: '40px', background: `${s.accent}20`, borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={s.accent} strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d={s.icon}/>
-                </svg>
-              </div>
+              <div style={{ fontSize: '28px', opacity: 0.7 }}>{s.icon}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {(stats?.pendingApprovals || 0) > 0 && (
-        <div className="alert alert-warning" style={{ marginBottom: '24px' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-          <strong>{stats?.pendingApprovals} transaction(s)</strong> are waiting for your approval.
-          <a href="/admin/approvals" style={{ color: 'var(--warning)', fontWeight: '600', marginLeft: '8px', textDecoration: 'underline' }}>Review now →</a>
+      <div className="grid-2">
+        {/* Pending Approvals */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontFamily: 'Syne', fontSize: '15px', fontWeight: '700' }}>Pending Approvals</h3>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/admin/approvals')}>View all →</button>
+          </div>
+          {pending.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '13px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '8px' }}>✅</div>
+              All clear! No pending approvals.
+            </div>
+          ) : pending.map((tx, i) => (
+            <div key={i} style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: '8px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ fontWeight: '600', fontSize: '13px', color: 'var(--text-primary)' }}>{tx.customer_name}</div>
+                <div style={{ fontWeight: '700', color: 'var(--accent)', fontSize: '13px' }}>PKR {Number(tx.amount).toLocaleString()}</div>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>TX: {tx.tx_id}</div>
+            </div>
+          ))}
         </div>
-      )}
+
+        {/* Recent Tickets */}
+        <div className="card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontFamily: 'Syne', fontSize: '15px', fontWeight: '700' }}>Recent Tickets</h3>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/admin/tickets')}>View all →</button>
+          </div>
+          {recent.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '13px' }}>
+              <div style={{ fontSize: '32px', marginBottom: '8px' }}>🎟️</div>
+              No tickets generated yet.
+            </div>
+          ) : recent.map((t, i) => (
+            <div key={i} style={{ padding: '12px', background: 'var(--bg-elevated)', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '13px', color: 'var(--accent)', fontFamily: 'monospace' }}>{t.ticket_id}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{t.name}</div>
+              </div>
+              <span className={`badge ${t.printed_count > 0 ? 'badge-approved' : 'badge-inactive'}`}>
+                {t.printed_count > 0 ? 'Printed' : 'New'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
