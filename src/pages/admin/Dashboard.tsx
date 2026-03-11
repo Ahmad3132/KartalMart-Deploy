@@ -177,9 +177,38 @@ export default function AdminDashboard() {
       });
       
       await handleResponse(res);
-      
       fetchData();
-      window.print();
+
+      // Open thermal print window
+      const win = window.open('', '_blank', 'width=420,height=700,menubar=no,toolbar=no');
+      if (!win) { window.print(); return; }
+      const date = new Date(ticket.date).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Print Ticket</title>
+<style>* { margin:0;padding:0;box-sizing:border-box; } @page { size:80mm auto;margin:2mm; } html,body{width:80mm;background:#fff;} body{display:flex;flex-direction:column;align-items:center;padding:2mm;}</style>
+</head><body>
+<div style="width:72mm;font-family:'Courier New',monospace;font-size:11px;color:#000;">
+  <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
+    <div style="font-size:15px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">KARTAL</div>
+    <div style="font-size:7px;letter-spacing:2px;">GROUP OF COMPANIES</div>
+    <div style="font-size:7px;border-top:1px dashed #000;margin-top:1.5mm;padding-top:1.5mm;">*** LUCKY DRAW TICKET ***</div>
+  </div>
+  <div style="text-align:center;background:#000;color:#fff;padding:2mm;margin-bottom:2mm;">
+    <div style="font-size:7px;letter-spacing:2px;">TICKET NUMBER</div>
+    <div style="font-size:21px;font-weight:900;letter-spacing:3px;">${ticket.ticket_id}</div>
+  </div>
+  <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:1.5mm 0;margin-bottom:1.5mm;">
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Name:</span><span style="font-weight:900;">${ticket.name}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Mobile:</span><span>${ticket.mobile}</span></div>
+  </div>
+  <div style="padding:1mm 0;font-size:9px;">
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">Date:</span><span>${date}</span></div>
+  </div>
+  <div style="border-top:2px solid #000;margin-top:1.5mm;padding-top:1.5mm;text-align:center;font-size:8px;">*** KEEP THIS TICKET SAFE ***</div>
+</div>
+<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},1500);},300);};</script>
+</body></html>`);
+      win.document.close();
     } catch (err: any) {
       setError(err.message);
     }

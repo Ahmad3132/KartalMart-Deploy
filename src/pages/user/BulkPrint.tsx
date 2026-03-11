@@ -2,6 +2,54 @@ import React, { useState, useEffect } from 'react';
 import { Printer, Search, Calendar, Filter, CheckCircle, AlertCircle, Ticket } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
+// Format Pakistani mobile for WhatsApp
+function formatWANumber(mobile: string): string {
+  const clean = (mobile || '').replace(/\D/g, '');
+  if (clean.startsWith('92')) return clean;
+  if (clean.startsWith('0')) return '92' + clean.slice(1);
+  if (clean.startsWith('3')) return '92' + clean;
+  return clean;
+}
+
+// Open thermal print window
+async function openThermalPrint(tickets: any[], isAdmin: boolean) {
+  const win = window.open('', '_blank', 'width=420,height=700,menubar=no,toolbar=no');
+  if (!win) { alert('Please allow popups to enable printing.'); return; }
+
+  const ticketBlocks = tickets.map(ticket => {
+    const mobile = isAdmin ? (ticket.mobile || '') : (ticket.mobile || '').slice(0, -3) + '***';
+    const date = new Date(ticket.date).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    return `
+<div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',monospace;font-size:11px;color:#000;background:#fff;margin-bottom:4mm;padding-bottom:2mm;">
+  <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
+    <div style="font-size:15px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">KARTAL</div>
+    <div style="font-size:7px;letter-spacing:2px;">GROUP OF COMPANIES</div>
+    <div style="font-size:7px;border-top:1px dashed #000;margin-top:1.5mm;padding-top:1.5mm;">*** LUCKY DRAW TICKET ***</div>
+  </div>
+  <div style="text-align:center;background:#000;color:#fff;padding:2mm;margin-bottom:2mm;">
+    <div style="font-size:7px;letter-spacing:2px;">TICKET NUMBER</div>
+    <div style="font-size:21px;font-weight:900;letter-spacing:3px;">${ticket.ticket_id}</div>
+  </div>
+  <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:1.5mm 0;margin-bottom:1.5mm;">
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Name:</span><span style="font-weight:900;">${ticket.name}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Mobile:</span><span>${mobile}</span></div>
+  </div>
+  <div style="padding:1mm 0;margin-bottom:1.5mm;font-size:9px;">
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">Date:</span><span>${date}</span></div>
+  </div>
+  <div style="border-top:2px solid #000;padding-top:1.5mm;text-align:center;font-size:8px;">*** KEEP THIS TICKET SAFE ***</div>
+</div>`;
+  }).join('<div style="height:1mm;"></div>');
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bulk Print</title>
+<style>* { margin:0;padding:0;box-sizing:border-box; } @page { size:80mm auto;margin:2mm; } html,body{width:80mm;background:#fff;} body{display:flex;flex-direction:column;align-items:center;padding:2mm;} @media screen{body{background:#ddd;padding:10px;}}</style>
+</head><body>${ticketBlocks}
+<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},1500);},400);};</script>
+</body></html>`);
+  win.document.close();
+}
+
 export default function BulkPrint() {
   const { user } = useAuth();
   const [tickets, setTickets] = useState<any[]>([]);
@@ -60,7 +108,7 @@ export default function BulkPrint() {
 
   const handleBulkPrint = async () => {
     if (selectedTickets.length === 0) return;
-    if (!window.confirm(`Are you sure you want to print ${selectedTickets.length} tickets in bulk?`)) return;
+    if (!window.confirm(`Print ${selectedTickets.length} ticket(s) on thermal printer?`)) return;
 
     try {
       const res = await fetch('/api/tickets/bulk-print', {
@@ -79,15 +127,12 @@ export default function BulkPrint() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Bulk print failed');
 
-      if (data.errors && data.errors.length > 0) {
-        setError(`Printed ${data.printedCount} tickets. Errors: ${data.errors.join(', ')}`);
-      } else {
-        alert(`Successfully printed ${data.printedCount} tickets.`);
-      }
-      
+      // Get the full ticket data for selected tickets and open thermal print
+      const toPrint = filteredTickets.filter(t => selectedTickets.includes(t.id));
+      await openThermalPrint(toPrint, user?.role === 'Admin');
+
       fetchTickets();
       setSelectedTickets([]);
-      window.print(); // Trigger browser print
     } catch (err: any) {
       setError(err.message);
     }
