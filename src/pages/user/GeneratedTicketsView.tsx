@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Ticket, Printer, Send, PlusCircle, CheckCircle, AlertCircle, FileDown, MessageSquare } from 'lucide-react';
+import { Printer, Send, PlusCircle, AlertCircle, FileDown, MessageSquare, CheckCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { TicketCard } from '../../components/TicketCard';
@@ -12,496 +12,242 @@ export default function GeneratedTicketsView() {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState<any[]>([]);
   const [settings, setSettings] = useState<any>({});
-  const [error, setError] = useState('');
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const ticketRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [loadingPDF, setLoadingPDF] = useState<string | null>(null);
+  const ticketRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   useEffect(() => {
     const headers = { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` };
     fetch(`/api/tickets?limit=1000`, { headers })
-      .then(res => res.json())
-      .then(data => {
-        const ticketsList = Array.isArray(data.tickets) ? data.tickets : [];
-        const filtered = ticketsList.filter((t: any) => t.tx_id === txId);
-        setTickets(filtered);
-      })
+      .then(r => r.json())
+      .then(d => setTickets((d.tickets || []).filter((t: any) => t.tx_id === txId)))
       .catch(() => setTickets([]));
-
     fetch('/api/settings', { headers })
-      .then(res => res.json())
-      .then(data => setSettings(data))
-      .catch(() => setSettings({}));
+      .then(r => r.json())
+      .then(d => setSettings(d))
+      .catch(() => {});
   }, [txId]);
+
+  const showMsg = (type: 'success' | 'error' | 'info', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 4000);
+  };
+
+  const formatWA = (mobile: string) => {
+    const clean = mobile.replace(/\D/g, '');
+    const num = clean.startsWith('0') ? '92' + clean.slice(1) : clean.startsWith('3') ? '92' + clean : clean;
+    return num;
+  };
 
   const handlePrint = async (ticketId: number) => {
     const ticket = tickets.find(t => t.id === ticketId);
     if (user?.role !== 'Admin' && ticket?.printed_count > 0) {
-      setError('Reprinting is restricted to Admins only.');
-      setTimeout(() => setError(''), 3000);
+      showMsg('error', 'Reprinting is restricted to Admins only.');
       return;
     }
-
     try {
       const res = await fetch(`/api/tickets/${ticketId}/print`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` },
         body: JSON.stringify({ user_email: user?.email, role: user?.role }),
       });
-      
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Print failed');
-      }
-
-      // Update local state
-      setTickets(tickets.map(t => t.id === ticketId ? { ...t, printed_count: t.printed_count + 1 } : t));
-      
-      // Trigger actual browser print
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      setTickets(ts => ts.map(t => t.id === ticketId ? { ...t, printed_count: t.printed_count + 1 } : t));
       window.print();
-    } catch (err: any) {
-      setError(err.message);
-      setTimeout(() => setError(''), 3000);
-    }
-  };
-
-  const formatWhatsAppUrl = (mobile: string, message: string) => {
-    // Ensure mobile number is in correct format (remove any non-digits)
-    const cleanMobile = mobile.replace(/\D/g, '');
-    // Add country code if missing (assuming Pakistan +92 if it starts with 0 or 3)
-    let formattedMobile = cleanMobile;
-    if (formattedMobile.startsWith('0')) {
-      formattedMobile = '92' + formattedMobile.substring(1);
-    } else if (formattedMobile.startsWith('3')) {
-      formattedMobile = '92' + formattedMobile;
-    }
-    return `https://wa.me/${formattedMobile}?text=${encodeURIComponent(message)}`;
+    } catch (err: any) { showMsg('error', err.message || 'Print failed'); }
   };
 
   const handleWhatsApp = (ticket: any) => {
-    const message = `*Kartal Group Ticket*\n\n*Ticket ID:* ${ticket.ticket_id}\n*Customer:* ${ticket.name}\n*Transaction ID:* ${ticket.tx_id}\n*Date:* ${new Date(ticket.date).toLocaleString()}\n\n_Please keep this ticket safe for verification._`;
-    const url = formatWhatsAppUrl(ticket.mobile, message);
-    window.open(url, 'whatsapp');
+    const msg = `*Kartal Group Lucky Draw Ticket*\n\n*Ticket ID:* ${ticket.ticket_id}\n*Customer:* ${ticket.name}\n*Transaction ID:* ${ticket.tx_id}\n*Date:* ${new Date(ticket.date).toLocaleDateString()}\n\n_Please keep this ticket safe for verification._`;
+    window.open(`https://wa.me/${formatWA(ticket.mobile)}?text=${encodeURIComponent(msg)}`, '_blank');
+    fetch(`/api/tickets/${ticket.id}/share/whatsapp`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
   };
 
   const handleWhatsAppAll = () => {
-    if (tickets.length === 0) return;
-    const firstTicket = tickets[0];
-    const ticketIds = tickets.map(t => t.ticket_id).join(', ');
-    const message = `*Kartal Group Tickets Batch*\n\n*Tickets:* ${ticketIds}\n*Customer:* ${firstTicket.name}\n*Transaction ID:* ${txId}\n\n_Your tickets have been generated successfully._`;
-    const url = formatWhatsAppUrl(firstTicket.mobile, message);
-    window.open(url, 'whatsapp');
+    if (!tickets.length) return;
+    const first = tickets[0];
+    const ids = tickets.map(t => t.ticket_id).join(', ');
+    const msg = `*Kartal Group Lucky Draw Tickets*\n\n*Tickets:* ${ids}\n*Customer:* ${first.name}\n*Transaction ID:* ${txId}\n\n_Your tickets have been generated successfully._`;
+    window.open(`https://wa.me/${formatWA(first.mobile)}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  const handleSendPDF = async (ticketId?: number) => {
-    setIsGeneratingPDF(true);
-    try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const ticketsToGen = ticketId 
-        ? tickets.filter(t => t.id === ticketId)
-        : tickets;
+  const generatePDF = async (ticketsToGen: any[]) => {
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    let currentY = 10;
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
 
-      // Parallelize canvas generation for speed
-      const canvasPromises = ticketsToGen.map(async (ticket) => {
-        const element = ticketRefs.current[ticket.id];
-        if (!element) return null;
-
-        // Temporarily hide buttons for capture
-        const buttons = element.querySelector('.print-hidden');
-        if (buttons) (buttons as HTMLElement).style.display = 'none';
-
-        const canvas = await html2canvas(element, {
-          scale: 1.2, // Reduced scale for speed while maintaining decent quality
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          imageTimeout: 0,
-        });
-
-        if (buttons) (buttons as HTMLElement).style.display = '';
-        return canvas;
-      });
-
-      const canvases = await Promise.all(canvasPromises);
-
-      let currentY = 10;
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      for (let i = 0; i < canvases.length; i++) {
-        const canvas = canvases[i];
-        if (!canvas) continue;
-
-        // Use JPEG with 0.6 quality for much faster PDF generation and smaller file size
-        const imgData = canvas.toDataURL('image/jpeg', 0.6);
-        const imgWidth = pageWidth - 20;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-        if (currentY + imgHeight > pageHeight - 10 && i > 0) {
-          pdf.addPage();
-          currentY = 10;
-        }
-
-        pdf.addImage(imgData, 'JPEG', 10, currentY, imgWidth, imgHeight, undefined, 'FAST');
-        currentY += imgHeight + 5;
-      }
-
-      const fileName = ticketId 
-        ? `Ticket-${ticketsToGen[0].ticket_id}.pdf`
-        : `Tickets-Batch-${txId}.pdf`;
-      
-      // Log the action
-      if (ticketId) {
-        fetch(`/api/tickets/${ticketId}/share/pdf`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
-        });
-      } else {
-        fetch(`/api/transactions/${txId}/share/pdf`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
-        });
-      }
-
-      const pdfBlob = pdf.output('blob');
-      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'Kartal Group Tickets',
-            text: 'Please find the generated tickets attached.',
-          });
-        } catch (shareErr) {
-          console.error('Share failed:', shareErr);
-          pdf.save(fileName);
-          if (ticketId && ticketsToGen.length === 1) {
-            handleWhatsApp(ticketsToGen[0]);
-          } else {
-            setError('PDF downloaded. Please share it manually via WhatsApp.');
-            setTimeout(() => setError(''), 5000);
-          }
-        }
-      } else {
-        pdf.save(fileName);
-        // If it's a single ticket, we can also open WhatsApp as a courtesy
-        if (ticketId && ticketsToGen.length === 1) {
-          handleWhatsApp(ticketsToGen[0]);
-        } else {
-          setError('PDF downloaded. Please share it manually via WhatsApp.');
-          setTimeout(() => setError(''), 5000);
-        }
-      }
-    } catch (err) {
-      console.error('PDF generation error:', err);
-      setError('Failed to generate/share PDF');
-      setTimeout(() => setError(''), 3000);
-    } finally {
-      setIsGeneratingPDF(false);
+    for (let i = 0; i < ticketsToGen.length; i++) {
+      const el = ticketRefs.current[ticketsToGen[i].id];
+      if (!el) continue;
+      const canvas = await html2canvas(el, { scale: 1.5, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/jpeg', 0.75);
+      const imgW = pageW - 20;
+      const imgH = (canvas.height * imgW) / canvas.width;
+      if (currentY + imgH > pageH - 10 && i > 0) { pdf.addPage(); currentY = 10; }
+      pdf.addImage(imgData, 'JPEG', 10, currentY, imgW, imgH, undefined, 'FAST');
+      currentY += imgH + 8;
     }
+    return pdf;
   };
 
   const handleDownloadPDF = async (ticketId?: number) => {
-    setIsGeneratingPDF(true);
+    const key = ticketId ? `pdf-${ticketId}` : 'pdf-all';
+    setLoadingPDF(key);
     try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const ticketsToGen = ticketId 
-        ? tickets.filter(t => t.id === ticketId)
-        : tickets;
+      const list = ticketId ? tickets.filter(t => t.id === ticketId) : tickets;
+      const pdf = await generatePDF(list);
+      const fname = ticketId ? `Ticket-${list[0].ticket_id}.pdf` : `Tickets-${txId}.pdf`;
+      pdf.save(fname);
+      if (ticketId) fetch(`/api/tickets/${ticketId}/share/pdf`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
+      showMsg('success', 'PDF downloaded successfully!');
+    } catch { showMsg('error', 'Failed to generate PDF'); }
+    finally { setLoadingPDF(null); }
+  };
 
-      // Parallelize canvas generation for speed
-      const canvasPromises = ticketsToGen.map(async (ticket) => {
-        const element = ticketRefs.current[ticket.id];
-        if (!element) return null;
-
-        // Temporarily hide buttons for capture
-        const buttons = element.querySelector('.print-hidden');
-        if (buttons) (buttons as HTMLElement).style.display = 'none';
-
-        const canvas = await html2canvas(element, {
-          scale: 1.2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          imageTimeout: 0,
-        });
-
-        if (buttons) (buttons as HTMLElement).style.display = '';
-        return canvas;
-      });
-
-      const canvases = await Promise.all(canvasPromises);
-
-      let currentY = 10;
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      for (let i = 0; i < canvases.length; i++) {
-        const canvas = canvases[i];
-        if (!canvas) continue;
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.6);
-        const imgWidth = pageWidth - 20;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-        if (currentY + imgHeight > pageHeight - 10 && i > 0) {
-          pdf.addPage();
-          currentY = 10;
-        }
-
-        pdf.addImage(imgData, 'JPEG', 10, currentY, imgWidth, imgHeight, undefined, 'FAST');
-        currentY += imgHeight + 5;
+  const handleSendPDF = async (ticket: any) => {
+    setLoadingPDF(`send-${ticket.id}`);
+    try {
+      const pdf = await generatePDF([ticket]);
+      const fname = `Ticket-${ticket.ticket_id}.pdf`;
+      const blob = pdf.output('blob');
+      const file = new File([blob], fname, { type: 'application/pdf' });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Kartal Group Ticket' });
+      } else {
+        pdf.save(fname);
+        handleWhatsApp(ticket);
       }
-
-      const fileName = ticketId 
-        ? `Ticket-${ticketsToGen[0].ticket_id}.pdf`
-        : `Tickets-Batch-${txId}.pdf`;
-      
-      pdf.save(fileName);
-    } catch (err) {
-      console.error('PDF generation error:', err);
-      setError('Failed to generate PDF');
-      setTimeout(() => setError(''), 3000);
-    } finally {
-      setIsGeneratingPDF(false);
-    }
+      fetch(`/api/tickets/${ticket.id}/share/pdf`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
+    } catch { showMsg('error', 'Failed to share PDF'); }
+    finally { setLoadingPDF(null); }
   };
 
-  const handleSendAndPrint = async (ticket: any) => {
-    if (user?.role !== 'Admin' && ticket.printed_count > 0) {
-      setError('Reprinting is restricted to Admins only.');
-      setTimeout(() => setError(''), 3000);
-      return;
-    }
-    await handlePrint(ticket.id);
-    handleSendPDF(ticket.id);
-  };
-
-  const handleSendSMS = async (ticketId: number) => {
+  const handleSMS = async (ticketId: number) => {
     try {
-      const res = await fetch(`/api/tickets/${ticketId}/share/sms`, {
+      await fetch(`/api/tickets/${ticketId}/share/sms`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` },
         body: JSON.stringify({ user_email: user?.email }),
       });
-      
-      if (!res.ok) throw new Error('Failed to send SMS');
-      
-      setError('SMS simulated successfully. Audit log updated.');
-      setTimeout(() => setError(''), 3000);
-    } catch (err: any) {
-      setError(err.message);
-      setTimeout(() => setError(''), 3000);
-    }
+      showMsg('success', 'SMS logged successfully.');
+    } catch { showMsg('error', 'SMS failed'); }
   };
 
-  const handleGenerateNew = () => {
-    const base = user?.role === 'Admin' ? '/admin' : '/user';
-    navigate(`${base}/generate`);
-  };
-
-  const handlePrintAll = async () => {
-    const toPrint = tickets.filter(t => user?.role === 'Admin' || t.printed_count === 0);
-    
-    if (toPrint.length === 0) {
-      setError('All tickets in this batch have already been printed.');
-      setTimeout(() => setError(''), 3000);
-      return;
-    }
-
-    for (const ticket of toPrint) {
-      await handlePrint(ticket.id);
-    }
-  };
-
-  const handleSendAndPrintAll = async () => {
-    const toPrint = tickets.filter(t => user?.role === 'Admin' || t.printed_count === 0);
-    
-    if (toPrint.length === 0) {
-      setError('All tickets in this batch have already been printed.');
-      setTimeout(() => setError(''), 3000);
-      return;
-    }
-
-    for (const ticket of toPrint) {
-      await handlePrint(ticket.id);
-    }
-    handleSendPDF();
-  };
-
-  const maskMobile = (mobile: string) => {
-    if (!mobile) return '';
-    return mobile.slice(0, -3) + '***';
-  };
+  const base = user?.role === 'Admin' ? '/admin' : '/user';
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 print:p-0">
-      <style dangerouslySetInnerHTML={{ __html: `
-        @media print {
-          body * { visibility: hidden; }
-          .print-area, .print-area * { visibility: visible; }
-          .print-area { 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            width: 100%;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-          .ticket-card {
-            page-break-inside: avoid;
-            border: 1px solid #000 !important;
-            margin-bottom: 10px !important;
-            padding: 10px !important;
-            width: 300px !important; /* Minimum size for print */
-            height: auto !important;
-          }
-          .no-print { display: none !important; }
-        }
-      `}} />
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
+    <div className="max-w-3xl mx-auto space-y-6">
+      <style>{`@media print { .no-print { display: none !important; } body * { visibility: hidden; } .print-area, .print-area * { visibility: visible; } .print-area { position: absolute; left: 0; top: 0; width: 100%; } }`}</style>
+
+      {/* Header */}
+      <div className="no-print flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tickets Generated</h1>
-          <p className="mt-1 text-sm text-gray-500">Transaction ID: <span className="font-mono font-semibold">{txId}</span></p>
+          <div className="flex items-center gap-2 mb-1">
+            <CheckCircle className="w-5 h-5 text-green-500" />
+            <h1 className="text-xl font-bold text-gray-900">Tickets Generated!</h1>
+          </div>
+          <p className="text-sm text-gray-500">Transaction: <span className="font-mono font-semibold text-indigo-600">{txId}</span> · {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {tickets.length > 1 && (
             <>
-              <button
-                onClick={() => handleDownloadPDF()}
-                disabled={isGeneratingPDF}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                <FileDown className="w-4 h-4 mr-2" />
-                {isGeneratingPDF ? 'Generating...' : 'Download All PDF'}
+              <button onClick={() => handleDownloadPDF()} disabled={loadingPDF === 'pdf-all'} className="btn-secondary">
+                <FileDown className="w-4 h-4 mr-1.5" />
+                {loadingPDF === 'pdf-all' ? 'Generating...' : 'Download All PDF'}
               </button>
-              <button
-                onClick={handlePrintAll}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
-              >
-                <Printer className="w-4 h-4 mr-2" />
-                Print All
-              </button>
-              <button
-                onClick={handleWhatsAppAll}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
+              <button onClick={handleWhatsAppAll} className="btn-green">
+                <MessageSquare className="w-4 h-4 mr-1.5" />
                 WhatsApp All
-              </button>
-              <button
-                onClick={() => handleSendPDF()}
-                disabled={isGeneratingPDF}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-              >
-                <Send className="w-4 h-4 mr-2" />
-                {isGeneratingPDF ? 'Generating...' : 'Send All PDF'}
-              </button>
-              <button
-                onClick={handleSendAndPrintAll}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
-              >
-                <Send className="w-4 h-4 mr-2" />
-                Send & Print All
               </button>
             </>
           )}
-          <button
-            onClick={handleGenerateNew}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-          >
-            <PlusCircle className="w-4 h-4 mr-2" />
-            Generate New
+          <button onClick={() => navigate(`${base}/generate`)} className="btn-primary">
+            <PlusCircle className="w-4 h-4 mr-1.5" />
+            New Ticket
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative print:hidden">
-          <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 mr-2" />
-            <span>{error}</span>
-          </div>
+      {/* Message */}
+      {message && (
+        <div className={`no-print flex items-center gap-2 p-3 rounded-lg text-sm font-medium ${
+          message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' :
+          message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
+          'bg-blue-50 text-blue-700 border border-blue-200'
+        }`}>
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {message.text}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 print-area">
+      {/* Tickets */}
+      <div className="print-area space-y-6">
         {tickets.map((ticket) => (
-          <div key={ticket.id} className="relative group">
-            <TicketCard 
-              ticket={ticket} 
-              ref={el => ticketRefs.current[ticket.id] = el}
+          <div key={ticket.id}>
+            <TicketCard
+              ticket={ticket}
+              ref={el => { ticketRefs.current[ticket.id] = el; }}
             />
-            
-            <div className="absolute bottom-6 right-6 flex flex-wrap gap-2 print:hidden opacity-0 group-hover:opacity-100 transition-opacity">
+
+            {/* Action buttons — always visible */}
+            <div className="no-print mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => handleDownloadPDF(ticket.id)}
-                disabled={isGeneratingPDF}
-                className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-all disabled:opacity-50"
+                disabled={!!loadingPDF}
+                className="inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
               >
-                <FileDown className="w-4 h-4 mr-2" />
-                PDF
+                <FileDown className="w-3.5 h-3.5 mr-1" />
+                {loadingPDF === `pdf-${ticket.id}` ? 'Generating...' : 'Download PDF'}
               </button>
+
               <button
                 onClick={() => handlePrint(ticket.id)}
                 disabled={user?.role !== 'Admin' && ticket.printed_count > 0}
-                className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                   user?.role !== 'Admin' && ticket.printed_count > 0
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-gray-900 text-white hover:bg-gray-800'
+                    : 'bg-gray-900 text-white hover:bg-gray-700'
                 }`}
               >
-                <Printer className="w-4 h-4 mr-2" />
-                {ticket.printed_count > 0 ? 'Reprint' : 'Print'}
+                <Printer className="w-3.5 h-3.5 mr-1" />
+                {ticket.printed_count > 0 ? `Reprint (${ticket.printed_count}×)` : 'Print'}
               </button>
 
-              {settings.whatsapp_enabled === 'true' && (
-                <>
-                  <button
-                    onClick={() => handleWhatsApp(ticket)}
-                    className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-all"
-                  >
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    WhatsApp
-                  </button>
-                  <button
-                    onClick={() => handleSendPDF(ticket.id)}
-                    disabled={isGeneratingPDF}
-                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all disabled:opacity-50"
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    Send PDF
-                  </button>
-                  <button
-                    onClick={() => handleSendAndPrint(ticket)}
-                    disabled={user?.role !== 'Admin' && ticket.printed_count > 0}
-                    className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      user?.role !== 'Admin' && ticket.printed_count > 0
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                    }`}
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    Send & Print
-                  </button>
-                  <button
-                    onClick={() => handleSendSMS(ticket.id)}
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all"
-                  >
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    Send SMS
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => handleWhatsApp(ticket)}
+                className="inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                WhatsApp
+              </button>
+
+              <button
+                onClick={() => handleSendPDF(ticket)}
+                disabled={!!loadingPDF}
+                className="inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                <Send className="w-3.5 h-3.5 mr-1" />
+                {loadingPDF === `send-${ticket.id}` ? 'Sending...' : 'Send PDF'}
+              </button>
+
+              <button
+                onClick={() => handleSMS(ticket.id)}
+                className="inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                SMS
+              </button>
             </div>
           </div>
         ))}
+
+        {tickets.length === 0 && (
+          <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-dashed">
+            <p className="text-lg font-medium">No tickets found for this transaction.</p>
+            <p className="text-sm mt-1">The transaction may still be pending approval.</p>
+          </div>
+        )}
       </div>
     </div>
   );

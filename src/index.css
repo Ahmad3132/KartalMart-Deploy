@@ -115,3 +115,51 @@
   --color-yellow-900: #713f12;
   --color-yellow-950: #422006;
 }
+
+/* Button utility classes */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background-color: #4f46e5;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.btn-primary:hover { background-color: #4338ca; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background-color: #ffffff;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.btn-secondary:hover { background-color: #f9fafb; }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-green {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background-color: #16a34a;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 0.75rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.btn-green:hover { background-color: #15803d; }

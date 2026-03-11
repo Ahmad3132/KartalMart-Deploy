@@ -57,6 +57,7 @@ db.exec(`
     whatsapp_redirect_after_scan INTEGER DEFAULT 0,
     custom_role_id INTEGER,
     whatsapp_redirect_enabled INTEGER DEFAULT 0,
+    receipt_required INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -197,6 +198,7 @@ const migrations = [
   { table: 'users', column: 'custom_role_id', type: 'INTEGER' },
   { table: 'users', column: 'profile_picture', type: 'TEXT' },
   { table: 'users', column: 'bio', type: 'TEXT' },
+  { table: 'users', column: 'receipt_required', type: 'INTEGER DEFAULT 0' },
   { table: 'tickets', column: 'generation_id', type: 'TEXT' },
   { table: 'tickets', column: 'generated_by_nick', type: 'TEXT' },
   { table: 'tickets', column: 'total_tickets_in_tx', type: 'INTEGER DEFAULT 1' },
@@ -678,6 +680,12 @@ async function startServer() {
       return res.status(400).json({ error: 'Multi-person transactions are not allowed for your account.' });
     }
 
+    // Per-user receipt requirement check
+    const receiptRequired = userSettings?.receipt_required === 1;
+    if (receiptRequired && payment_type === 'ONLINE' && !req.file && !receipt_url) {
+      return res.status(400).json({ error: 'A payment receipt (upload or URL) is required for your account.' });
+    }
+
     let finalTxId = tx_id;
     let cashReferenceId = null;
     if (payment_type === 'CASH') {
@@ -828,6 +836,35 @@ async function startServer() {
     } catch (err: any) {
       console.error('Approval error:', err);
       res.status(500).json({ error: 'Failed to approve transaction: ' + err.message });
+    }
+  });
+
+  // REJECT Transaction
+  app.put('/api/transactions/:id/reject', authenticateToken, (req: any, res: any) => {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const currentUser = req.user;
+
+    if (currentUser.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only admins can reject transactions' });
+    }
+
+    const tx = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as any;
+    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+    if (tx.status === 'Generated') {
+      return res.status(400).json({ error: 'Cannot reject a transaction that already has tickets generated' });
+    }
+
+    try {
+      db.prepare("UPDATE transactions SET status = 'Rejected' WHERE id = ?").run(id);
+      db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
+        'Reject Transaction',
+        `Transaction ${tx.tx_id} rejected. Reason: ${reason || 'No reason provided'}`,
+        currentUser.email
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to reject: ' + err.message });
     }
   });
 
