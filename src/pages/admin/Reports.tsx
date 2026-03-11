@@ -167,24 +167,24 @@ export default function Reports() {
   }, [searchTerm, dateFrom, dateTo, tickets]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="max-w-7xl mx-auto space-y-8 pb-12">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Kartal Group Reports</h1>
-          <p className="mt-1 text-sm text-gray-500">View all generated tickets and user performance.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Kartal Group Reports</h1>
+          <p className="mt-1 text-gray-500">Comprehensive analytics and transaction history.</p>
           {dateFrom && new Date(dateFrom) < new Date(new Date().setHours(0,0,0,0)) && (
-            <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
+            <div className="mt-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
               <CheckCircle className="w-3 h-3 mr-1" /> Finalized Report
-            </span>
+            </div>
           )}
         </div>
-        <div className="flex space-x-2">
-          <div className="flex bg-gray-100 p-1 rounded-lg mr-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex bg-gray-100 p-1 rounded-xl">
             {user?.role === 'Admin' ? (
               <>
                 <button
                   onClick={() => setActiveView('all')}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                  className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${
                     activeView === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -192,7 +192,7 @@ export default function Reports() {
                 </button>
                 <button
                   onClick={() => setActiveView('user-stats')}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                  className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${
                     activeView === 'user-stats' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
@@ -200,45 +200,63 @@ export default function Reports() {
                 </button>
               </>
             ) : (
-              <button
-                className="px-4 py-1.5 text-sm font-medium rounded-md bg-white text-indigo-600 shadow-sm"
-              >
-                My Activity Reports
+              <button className="px-4 py-2 text-sm font-bold rounded-lg bg-white text-indigo-600 shadow-sm">
+                My Activity
               </button>
             )}
           </div>
           {user?.role === 'Admin' && (
             <button 
               onClick={exportToCSV}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="inline-flex items-center px-6 py-2 bg-white border border-gray-200 shadow-sm text-sm font-bold rounded-xl text-gray-700 hover:bg-gray-50 transition-all"
             >
-              <Download className="w-4 h-4 mr-2 text-gray-500" />
-              Export CSV
+              <Download className="w-4 h-4 mr-2" />
+              Export
             </button>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <p className="text-sm font-medium text-gray-500">Total Tickets</p>
-          <p className="text-2xl font-bold text-gray-900">{filteredTickets.length}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2 bg-indigo-50 rounded-xl">
+              <FileText className="w-5 h-5 text-indigo-600" />
+            </div>
+          </div>
+          <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Total Tickets</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">{filteredTickets.length}</p>
         </div>
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <p className="text-sm font-medium text-gray-500">Total Revenue</p>
-          <p className="text-2xl font-bold text-gray-900">
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2 bg-emerald-50 rounded-xl">
+              <CreditCard className="w-5 h-5 text-emerald-600" />
+            </div>
+          </div>
+          <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Total Revenue</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">
             PKR {filteredTickets.reduce((acc, t) => acc + (t.amount / t.total_tickets_in_tx), 0).toLocaleString()}
           </p>
         </div>
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <p className="text-sm font-medium text-gray-500 text-green-600">Cash Revenue</p>
-          <p className="text-2xl font-bold text-gray-900">
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2 bg-blue-50 rounded-xl">
+              <CheckCircle className="w-5 h-5 text-blue-600" />
+            </div>
+          </div>
+          <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Cash Revenue</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">
             PKR {filteredTickets.filter(t => t.payment_type === 'CASH').reduce((acc, t) => acc + (t.amount / t.total_tickets_in_tx), 0).toLocaleString()}
           </p>
         </div>
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <p className="text-sm font-medium text-gray-500 text-blue-600">Online Revenue</p>
-          <p className="text-2xl font-bold text-gray-900">
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2 bg-purple-50 rounded-xl">
+              <Printer className="w-5 h-5 text-purple-600" />
+            </div>
+          </div>
+          <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Online Revenue</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">
             PKR {filteredTickets.filter(t => t.payment_type === 'ONLINE').reduce((acc, t) => acc + (t.amount / t.total_tickets_in_tx), 0).toLocaleString()}
           </p>
         </div>
@@ -246,39 +264,44 @@ export default function Reports() {
 
       {activeView === 'all' ? (
         <>
-          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search by ID, Name, Mobile, GenID..."
+                  placeholder="Search by ID, Name, Mobile..."
                   value={searchTerm}
                   onChange={(e) => { setSearchTerm(e.target.value); setTicketPage(1); }}
-                  className="pl-10 w-full rounded-lg border-gray-300 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="pl-12 w-full rounded-2xl border-gray-200 border p-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
                 />
               </div>
-              <div className="flex items-center space-x-2">
-                <Calendar className="h-4 w-4 text-gray-400" />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => { setDateFrom(e.target.value); setTicketPage(1); }}
-                  className="flex-1 rounded-lg border-gray-300 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-                <span className="text-gray-400">to</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => { setDateTo(e.target.value); setTicketPage(1); }}
-                  className="flex-1 rounded-lg border-gray-300 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+              <div className="flex items-center gap-3">
+                <div className="flex-1 relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => { setDateFrom(e.target.value); setTicketPage(1); }}
+                    className="pl-10 w-full rounded-xl border-gray-200 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+                <span className="text-gray-400 font-bold">to</span>
+                <div className="flex-1 relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => { setDateTo(e.target.value); setTicketPage(1); }}
+                    className="pl-10 w-full rounded-xl border-gray-200 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-3">
                 <select
                   value={selectedCampaign}
                   onChange={(e) => { setSelectedCampaign(e.target.value); setTicketPage(1); }}
-                  className="flex-1 rounded-lg border-gray-300 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="flex-1 rounded-xl border-gray-200 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
                   <option value="">All Campaigns</option>
                   {campaigns.map(c => (
@@ -289,41 +312,41 @@ export default function Reports() {
                   type="month"
                   value={selectedMonth}
                   onChange={(e) => { setSelectedMonth(e.target.value); setTicketPage(1); }}
-                  className="flex-1 rounded-lg border-gray-300 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="flex-1 rounded-xl border-gray-200 border p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </div>
             </div>
           </div>
-          <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-100">
+                <thead className="bg-gray-50/50">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Printed By</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date/Time</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Ticket ID</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Customer</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Created By</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Printed By</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Date/Time</th>
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-400 uppercase tracking-wider">Details</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-gray-50">
                   {tickets.map((ticket) => (
-                    <tr key={ticket.id} className="hover:bg-gray-50">
+                    <tr key={ticket.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-bold text-indigo-600">{ticket.ticket_id}</div>
                         <div className="text-[10px] text-gray-400 font-mono">Tx: {ticket.tx_id}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{ticket.name}</div>
+                        <div className="text-sm font-bold text-gray-900">{ticket.name}</div>
                         <div className="text-xs text-gray-500">{maskMobile(ticket.mobile)}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-xs text-gray-900 font-medium">{ticket.generated_by_nick || ticket.generated_by}</div>
+                        <div className="text-xs text-gray-900 font-bold">{ticket.generated_by_nick || ticket.generated_by}</div>
                         <div className="text-[10px] text-gray-400">{new Date(ticket.date).toLocaleDateString()}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-xs text-gray-900 font-medium">{ticket.last_printed_by_nick || '-'}</div>
+                        <div className="text-xs text-gray-900 font-bold">{ticket.last_printed_by_nick || '-'}</div>
                         {ticket.last_printed_at && <div className="text-[10px] text-gray-400">{new Date(ticket.last_printed_at).toLocaleDateString()}</div>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -332,9 +355,9 @@ export default function Reports() {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button 
                           onClick={() => setSelectedTicket(ticket)}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold hover:bg-indigo-100 transition-all"
                         >
-                          View Details
+                          View
                         </button>
                       </td>
                     </tr>
@@ -344,22 +367,22 @@ export default function Reports() {
             </div>
             
             {/* Pagination */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
               <div className="text-sm text-gray-500">
-                Showing <span className="font-medium">{(ticketPage - 1) * 20 + 1}</span> to <span className="font-medium">{Math.min(ticketPage * 20, totalTickets)}</span> of <span className="font-medium">{totalTickets}</span> tickets
+                Showing <span className="font-bold">{(ticketPage - 1) * 20 + 1}</span> to <span className="font-bold">{Math.min(ticketPage * 20, totalTickets)}</span> of <span className="font-bold">{totalTickets}</span> tickets
               </div>
-              <div className="flex space-x-2">
+              <div className="flex gap-2">
                 <button 
                   disabled={ticketPage === 1}
                   onClick={() => setTicketPage(prev => prev - 1)}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 bg-white"
+                  className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-gray-50 transition-all"
                 >
                   Previous
                 </button>
                 <button 
                   disabled={ticketPage * 20 >= totalTickets}
                   onClick={() => setTicketPage(prev => prev + 1)}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 bg-white"
+                  className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-gray-50 transition-all"
                 >
                   Next
                 </button>
@@ -368,29 +391,29 @@ export default function Reports() {
           </div>
         </>
       ) : activeView === 'user-stats' ? (
-        <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-gray-100">
+              <thead className="bg-gray-50/50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Today (Tickets)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month (Tickets)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Today (Revenue)</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month (Revenue)</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">User</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Today (Tickets)</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Month (Tickets)</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Today (Revenue)</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Month (Revenue)</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-gray-50">
                 {userStats.map((stat: any) => (
-                  <tr key={stat.email} className="hover:bg-gray-50">
+                  <tr key={stat.email} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{stat.name || stat.email}</div>
+                      <div className="text-sm font-bold text-gray-900">{stat.name || stat.email}</div>
                       <div className="text-xs text-gray-500">{stat.nick_name || '-'}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold">{stat.today_count}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold">{stat.month_count}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-bold">PKR {stat.today_revenue || 0}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-bold">PKR {stat.month_revenue || 0}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-black">{stat.today_count}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-black">{stat.month_count}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-emerald-600 font-black">PKR {stat.today_revenue || 0}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-emerald-600 font-black">PKR {stat.month_revenue || 0}</td>
                   </tr>
                 ))}
               </tbody>
@@ -398,22 +421,22 @@ export default function Reports() {
           </div>
           
           {/* Pagination */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+          <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
             <div className="text-sm text-gray-500">
-              Showing <span className="font-medium">{(userStatsPage - 1) * 20 + 1}</span> to <span className="font-medium">{Math.min(userStatsPage * 20, totalUserStats)}</span> of <span className="font-medium">{totalUserStats}</span> users
+              Showing <span className="font-bold">{(userStatsPage - 1) * 20 + 1}</span> to <span className="font-bold">{Math.min(userStatsPage * 20, totalUserStats)}</span> of <span className="font-bold">{totalUserStats}</span> users
             </div>
-            <div className="flex space-x-2">
+            <div className="flex gap-2">
               <button 
                 disabled={userStatsPage === 1}
                 onClick={() => setUserStatsPage(prev => prev - 1)}
-                className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 bg-white"
+                className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-gray-50 transition-all"
               >
                 Previous
               </button>
               <button 
                 disabled={userStatsPage * 20 >= totalUserStats}
                 onClick={() => setUserStatsPage(prev => prev + 1)}
-                className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 bg-white"
+                className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-gray-50 transition-all"
               >
                 Next
               </button>

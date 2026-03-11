@@ -1,36 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { LayoutDashboard, Ticket, Settings, Package, CheckCircle, FileText, LogOut, Printer, Menu, X, Scan, Users, UserPlus, Clock } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { Logo } from '../components/Logo';
 
 const navItems = [
-  { to: '/admin', label: 'Dashboard', end: true, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-  { to: '/admin/generate', label: 'Generate Ticket', icon: 'M12 4v16m8-8H4' },
-  { to: '/admin/approvals', label: 'Approvals', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', badge: 'pending' },
-  { to: '/admin/campaigns', label: 'Campaigns', icon: 'M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z' },
-  { to: '/admin/packages', label: 'Packages', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
-  { to: '/admin/tickets', label: 'All Tickets', icon: 'M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z' },
-  { to: '/admin/customers', label: 'Customers', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
-  { to: '/admin/users', label: 'Users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
-  { to: '/admin/reports', label: 'Reports', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-  { to: '/admin/audit', label: 'Audit Logs', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-  { to: '/admin/scanner', label: 'Scanner', icon: 'M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z' },
-  { to: '/admin/settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  { name: 'Dashboard', path: '/admin', icon: LayoutDashboard },
+  { name: 'Generate Ticket', path: '/admin/generate', icon: Ticket },
+  { name: 'Customers', path: '/admin/customers', icon: Users },
+  { name: 'Campaign Setup', path: '/admin/campaigns', icon: Settings },
+  { name: 'Package Setup', path: '/admin/packages', icon: Package },
+  { name: 'Pending Approvals', path: '/admin/approvals', icon: CheckCircle, badge: true },
+  { name: 'Audit Logs', path: '/admin/audit', icon: FileText },
+  { name: 'Bulk Print', path: '/admin/bulk-print', icon: Printer },
+  { name: 'Reports', path: '/admin/reports', icon: FileText },
+  { name: 'Scanner', path: '/admin/scanner', icon: Scan },
+  { name: 'Users', path: '/admin/users', icon: UserPlus },
+  { name: 'Settings', path: '/admin/settings', icon: Settings },
 ];
 
-const Icon = ({ d }: { d: string }) => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
-    <path strokeLinecap="round" strokeLinejoin="round" d={d} />
-  </svg>
-);
-
 export default function AdminLayout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => { setIsMobileMenuOpen(false); }, [location.pathname]);
 
   useEffect(() => {
     const fetchPending = async () => {
@@ -47,80 +44,81 @@ export default function AdminLayout() {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
-  const SidebarContent = () => (
+  const NavContent = () => (
     <>
-      <div style={{ padding: '20px 14px 10px', borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: '12px' }}>
-        <div style={{ fontSize: '13px', fontWeight: '600', color: '#fff' }}>{user?.name || user?.nick_name || user?.email?.split('@')[0]}</div>
-        <div style={{ fontSize: '11px', color: '#a78bfa', marginTop: '1px' }}>Administrator</div>
+      <div className="p-4 border-b border-gray-200 flex items-center">
+        <Logo className="w-full h-16" textSide="right" />
       </div>
-      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 8px' }}>
-        {navItems.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Icon d={item.icon} />
-            <span>{item.label}</span>
-            {item.badge === 'pending' && pendingCount > 0 && (
-              <span style={{ marginLeft: 'auto', background: '#f59e0b', color: '#000', fontSize: '10px', fontWeight: '800', padding: '1px 7px', borderRadius: '10px' }}>{pendingCount}</span>
-            )}
-          </NavLink>
-        ))}
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        {navItems.map((item) => {
+          const isActive = location.pathname === item.path;
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.name}
+              to={item.path}
+              className={cn(
+                "flex items-center justify-between px-4 py-3 rounded-lg font-medium transition-colors",
+                isActive ? "bg-indigo-50 text-indigo-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              )}
+            >
+              <div className="flex items-center space-x-3">
+                <Icon className={cn("w-5 h-5 flex-shrink-0", isActive ? "text-indigo-700" : "text-gray-400")} />
+                <span>{item.name}</span>
+              </div>
+              {item.badge && pendingCount > 0 && (
+                <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full">{pendingCount}</span>
+              )}
+            </Link>
+          );
+        })}
       </nav>
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '12px 8px', marginTop: '8px' }}>
-        <button onClick={handleLogout} className="nav-item" style={{ width: '100%', color: '#f87171', background: 'none', border: 'none', cursor: 'pointer' }}>
-          <Icon d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          Sign Out
+      <div className="p-4 border-t border-gray-200">
+        <button onClick={handleLogout} className="flex items-center space-x-3 px-4 py-3 w-full rounded-lg font-medium text-red-600 hover:bg-red-50 transition-colors">
+          <LogOut className="w-5 h-5" />
+          <span>Logout</span>
         </button>
       </div>
     </>
   );
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Desktop sidebar */}
-      <div className="sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
-        {/* Logo */}
-        <div style={{ padding: '20px 14px 0', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '34px', height: '34px', background: 'linear-gradient(135deg, #6c63ff, #a78bfa)', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
-          </div>
-          <div>
-            <div style={{ fontFamily: 'Syne', fontWeight: '800', fontSize: '14px', color: '#fff' }}>KARTAL</div>
-            <div style={{ fontSize: '9px', color: '#a78bfa', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Admin Panel</div>
-          </div>
+    <div className="min-h-screen bg-neutral-100 flex flex-col md:flex-row">
+      {/* Mobile Header */}
+      <div className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-50 shadow-sm">
+        <Logo className="h-8 w-32" textSide="right" />
+        <div className="flex items-center gap-3">
+          {pendingCount > 0 && (
+            <Link to="/admin/approvals" className="flex items-center gap-1 bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">
+              <Clock className="w-3 h-3" /> {pendingCount}
+            </Link>
+          )}
+          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </div>
-        <SidebarContent />
       </div>
 
-      {/* Mobile topbar */}
-      <div style={{ display: 'none', position: 'fixed', top: 0, left: 0, right: 0, height: '56px', background: '#1e1b3a', zIndex: 200, alignItems: 'center', padding: '0 16px', gap: '12px' }} className="mobile-topbar">
-        <div style={{ width: '30px', height: '30px', background: 'linear-gradient(135deg, #6c63ff, #a78bfa)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
-        </div>
-        <span style={{ fontFamily: 'Syne', fontWeight: '800', color: '#fff', fontSize: '15px', flex: 1 }}>KARTAL</span>
-        {pendingCount > 0 && <span style={{ background: '#f59e0b', color: '#000', fontSize: '11px', fontWeight: '800', padding: '2px 8px', borderRadius: '10px' }}>{pendingCount}</span>}
-        <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: '4px' }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d={mobileOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} /></svg>
-        </button>
-      </div>
-
-      {/* Mobile drawer */}
-      {mobileOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 150 }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMobileOpen(false)} />
-          <div style={{ position: 'absolute', top: 56, left: 0, bottom: 0, width: '260px', background: '#1e1b3a', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-            <SidebarContent />
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setIsMobileMenuOpen(false)}>
+          <div className="w-72 h-full bg-white flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            <NavContent />
           </div>
         </div>
       )}
 
-      <div className="main-content fade-up"><Outlet /></div>
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-gray-200 flex-col sticky top-0 h-screen">
+        <NavContent />
+      </aside>
 
-      <style>{`
-        @media (max-width: 900px) {
-          .sidebar { display: none !important; }
-          .mobile-topbar { display: flex !important; }
-          .main-content { margin-left: 0 !important; margin-top: 56px !important; }
-        }
-      `}</style>
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto">
+          <Outlet />
+        </div>
+      </main>
     </div>
   );
 }

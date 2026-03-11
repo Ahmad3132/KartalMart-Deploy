@@ -204,7 +204,6 @@ const migrations = [
   { table: 'tickets', column: 'last_printed_by_nick', type: 'TEXT' },
   { table: 'tickets', column: 'created_by_user_id', type: 'TEXT' },
   { table: 'tickets', column: 'created_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
-  { table: 'users', column: 'receipt_required', type: 'INTEGER DEFAULT 1' },
 ];
 
 for (const m of migrations) {
@@ -307,12 +306,12 @@ async function startServer() {
 
   // Users management
   app.get('/api/users/me', authenticateToken, (req: any, res: any) => {
-    const user = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, receipt_required, created_at FROM users WHERE email = ?').get(req.user.email);
+    const user = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, created_at FROM users WHERE email = ?').get(req.user.email);
     res.json(user);
   });
 
   app.get('/api/users', authenticateToken, (req, res) => {
-    const users = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, receipt_required, created_at FROM users').all();
+    const users = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, created_at FROM users').all();
     res.json(users);
   });
 
@@ -337,11 +336,11 @@ async function startServer() {
           email, password, name, nick_name, role, status, 
           whatsapp_redirect_enabled, whatsapp_integration_enabled, 
           multi_person_logic_enabled, duplicate_tx_enabled, 
-          require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, receipt_required
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          require_all_approvals, whatsapp_redirect_after_scan, custom_role_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         email, hashedPassword, name, nick_name, role, status, 
-        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, receipt_required ? 1 : 1
+        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id
       );
       res.json({ success: true });
     } catch (err: any) {
@@ -364,7 +363,6 @@ async function startServer() {
     const dupTx = duplicate_tx_enabled ? 1 : 0;
     const reqApp = require_all_approvals ? 1 : 0;
     const waScan = whatsapp_redirect_after_scan ? 1 : 0;
-    const receiptReq = req.body.receipt_required !== undefined ? (req.body.receipt_required ? 1 : 0) : 1;
 
     if (password) {
       const hashedPassword = bcrypt.hashSync(password, 10);
@@ -373,11 +371,11 @@ async function startServer() {
           role = ?, status = ?, password = ?, name = ?, nick_name = ?, 
           whatsapp_redirect_enabled = ?, whatsapp_integration_enabled = ?, 
           multi_person_logic_enabled = ?, duplicate_tx_enabled = ?, 
-          require_all_approvals = ?, whatsapp_redirect_after_scan = ?, custom_role_id = ?, receipt_required = ?
+          require_all_approvals = ?, whatsapp_redirect_after_scan = ?, custom_role_id = ? 
         WHERE email = ?
       `).run(
         role, status, hashedPassword, name, nick_name, 
-        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, receiptReq, email
+        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, email
       );
     } else {
       db.prepare(`
@@ -385,11 +383,11 @@ async function startServer() {
           role = ?, status = ?, name = ?, nick_name = ?, 
           whatsapp_redirect_enabled = ?, whatsapp_integration_enabled = ?, 
           multi_person_logic_enabled = ?, duplicate_tx_enabled = ?, 
-          require_all_approvals = ?, whatsapp_redirect_after_scan = ?, custom_role_id = ?, receipt_required = ?
+          require_all_approvals = ?, whatsapp_redirect_after_scan = ?, custom_role_id = ? 
         WHERE email = ?
       `).run(
         role, status, name, nick_name, 
-        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, receiptReq, email
+        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, email
       );
     }
     res.json({ success: true });
@@ -659,7 +657,7 @@ async function startServer() {
       return res.status(400).json({ error: 'Invalid package' });
     }
 
-    const userSettings = db.prepare('SELECT whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, receipt_required FROM users WHERE email = ?').get(currentUser.email) as any;
+    const userSettings = db.prepare('SELECT whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals FROM users WHERE email = ?').get(currentUser.email) as any;
     
     const globalSettings = db.prepare('SELECT * FROM settings').all() as any[];
     const globalSettingsObj = globalSettings.reduce((acc, curr) => {
@@ -675,11 +673,6 @@ async function startServer() {
     const mpLogicEnabled = (userSettings?.multi_person_logic_enabled === 1) && globalMultiPerson;
     const dupTxEnabled = (userSettings?.duplicate_tx_enabled === 1) && globalDupTx;
     const reqAppEnabled = (userSettings?.require_all_approvals === 1) || globalReqApp;
-
-    const receiptRequired = userSettings?.receipt_required !== 0; // default true
-    if (payment_type === 'EASYPAISA' && receiptRequired && !req.file && !receipt_url) {
-      return res.status(400).json({ error: 'Receipt is required for EasyPaisa payments for your account.' });
-    }
 
     if (is_multi_person && !mpLogicEnabled) {
       return res.status(400).json({ error: 'Multi-person transactions are not allowed for your account.' });
@@ -836,29 +829,6 @@ async function startServer() {
       console.error('Approval error:', err);
       res.status(500).json({ error: 'Failed to approve transaction: ' + err.message });
     }
-  });
-
-  // REJECT transaction
-  app.put('/api/transactions/:id/reject', authenticateToken, (req: any, res: any) => {
-    const { id } = req.params;
-    const { reason } = req.body;
-    const currentUser = req.user;
-
-    if (currentUser.role !== 'Admin') {
-      return res.status(403).json({ error: 'Only admins can reject transactions' });
-    }
-
-    const tx = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as any;
-    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
-
-    db.prepare("UPDATE transactions SET status = 'Rejected' WHERE id = ?").run(id);
-    db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
-      'Reject Transaction',
-      `Transaction ${tx.tx_id} rejected. Reason: ${reason || 'No reason given'}`,
-      currentUser.email
-    );
-
-    res.json({ success: true });
   });
 
   app.post('/api/transactions/:id/generate', authenticateToken, (req, res) => {

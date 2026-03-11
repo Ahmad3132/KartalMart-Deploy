@@ -1,27 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Check, AlertCircle, Eye } from 'lucide-react';
+import { Check, AlertCircle, Eye, Clock, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { handleResponse } from '../../utils/api';
 
 export default function PendingApprovals() {
   const [pending, setPending] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const fetchPending = () => {
-    fetch('/api/transactions/pending', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
-      }
-    })
-      .then(async res => {
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || 'Failed to fetch pending transactions');
+  const fetchPending = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/transactions/pending', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
         }
-        return res.json().catch(() => []);
-      })
-      .then(data => setPending(Array.isArray(data) ? data : []))
-      .catch((err) => {
-        console.error('Pending fetch error:', err);
-        setPending([]);
       });
+      const data = await handleResponse(res);
+      setPending(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Pending fetch error:', err);
+      setError(err.message);
+      setPending([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -29,89 +33,132 @@ export default function PendingApprovals() {
   }, []);
 
   const approveTransaction = async (id: number) => {
-    await fetch(`/api/transactions/${id}/approve`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
-      }
-    });
-    fetchPending();
+    if (!window.confirm('Are you sure you want to approve this transaction?')) return;
+    try {
+      const res = await fetch(`/api/transactions/${id}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
+        }
+      });
+      await handleResponse(res);
+      fetchPending();
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Pending Approvals</h1>
-        <p className="mt-1 text-sm text-gray-500">Review and approve duplicate transactions.</p>
+    <div className="max-w-5xl mx-auto space-y-8 pb-12">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => navigate('/admin')}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <ArrowLeft className="w-6 h-6 text-gray-600" />
+          </button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Pending Approvals</h1>
+            <p className="mt-1 text-gray-500">Review and approve transactions requiring manual verification.</p>
+          </div>
+        </div>
+        <div className="bg-orange-100 text-orange-700 px-4 py-2 rounded-xl font-bold flex items-center">
+          <Clock className="w-5 h-5 mr-2" />
+          {pending.length} Pending
+        </div>
       </div>
 
-      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Duplicate Transactions</h3>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-            {pending.length} Pending
-          </span>
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center">
+          <AlertCircle className="w-5 h-5 mr-2" />
+          {error}
         </div>
-        
-        {pending.length > 0 ? (
-          <ul className="divide-y divide-gray-200">
+      )}
+
+      <div className="bg-white shadow-sm rounded-3xl border border-gray-100 overflow-hidden">
+        {loading ? (
+          <div className="p-20 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+            <p className="mt-4 text-gray-500 font-medium">Loading transactions...</p>
+          </div>
+        ) : pending.length > 0 ? (
+          <div className="divide-y divide-gray-50">
             {pending.map((tx) => (
-              <li key={tx.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-start space-x-4">
-                    <div className="flex-shrink-0 mt-1">
-                      <AlertCircle className="h-6 w-6 text-orange-500" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        Transaction ID: <span className="font-mono">{tx.tx_id}</span>
-                      </p>
-                      <div className="mt-1 text-sm text-gray-500 space-y-1">
-                        <p>User: {tx.user_email}</p>
-                        <p>Amount: PKR {tx.amount} &middot; Tickets: {tx.ticket_count}</p>
-                        <p>Payment: {tx.payment_type} {tx.receipt_url && <a href={tx.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-600 underline ml-1">View Receipt</a>}</p>
-                        <p>Date: {new Date(tx.date).toLocaleString()}</p>
-                        {tx.is_multi_person === 1 && (
-                          <div className="mt-2 p-2 bg-indigo-50 rounded border border-indigo-100">
-                            <p className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1">Multi-Person Transaction</p>
-                            <p className="text-xs text-indigo-600 italic">Tickets will be generated for each participant upon approval.</p>
-                          </div>
-                        )}
+              <div key={tx.id} className="p-6 hover:bg-gray-50 transition-all">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="flex-1 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-orange-50 rounded-lg">
+                        <AlertCircle className="w-5 h-5 text-orange-500" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">
+                          Transaction ID: <span className="font-mono text-indigo-600">{tx.tx_id}</span>
+                        </p>
+                        <p className="text-xs text-gray-400">{new Date(tx.date).toLocaleString()}</p>
                       </div>
                     </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-2xl">
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">User Email</p>
+                        <p className="text-sm font-medium text-gray-700">{tx.user_email}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Amount & Tickets</p>
+                        <p className="text-sm font-bold text-gray-900">PKR {tx.amount} &middot; {tx.ticket_count} Tickets</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Payment Method</p>
+                        <p className="text-sm font-medium text-gray-700">{tx.payment_type}</p>
+                      </div>
+                    </div>
+
+                    {tx.is_multi_person === 1 && (
+                      <div className="inline-flex items-center px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold">
+                        Multi-Person Transaction
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">
-                      Pending
-                    </span>
+
+                  <div className="flex flex-row md:flex-col gap-3">
                     {tx.receipt_url && (
                       <a
                         href={tx.receipt_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded shadow-sm text-gray-700 bg-white hover:bg-gray-50"
+                        className="flex-1 md:flex-none inline-flex items-center justify-center px-4 py-2 border border-gray-200 text-sm font-bold rounded-xl text-gray-700 bg-white hover:bg-gray-50 transition-all"
                       >
-                        <Eye className="w-4 h-4 mr-1" />
+                        <Eye className="w-4 h-4 mr-2" />
                         View Receipt
                       </a>
                     )}
                     <button
                       onClick={() => approveTransaction(tx.id)}
-                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      className="flex-1 md:flex-none inline-flex items-center justify-center px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 shadow-sm transition-all"
                     >
-                      <Check className="w-4 h-4 mr-1" />
+                      <Check className="w-4 h-4 mr-2" />
                       Approve
                     </button>
                   </div>
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         ) : (
-          <div className="px-4 py-12 text-center">
-            <Check className="mx-auto h-12 w-12 text-gray-300" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">All caught up</h3>
-            <p className="mt-1 text-sm text-gray-500">No pending transactions require approval.</p>
+          <div className="p-20 text-center">
+            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
+              <Check className="w-10 h-10 text-emerald-500" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900">All Caught Up!</h3>
+            <p className="mt-2 text-gray-500">No pending transactions require approval at this time.</p>
+            <button 
+              onClick={() => navigate('/admin')}
+              className="mt-8 text-indigo-600 font-bold hover:text-indigo-700"
+            >
+              Back to Dashboard
+            </button>
           </div>
         )}
       </div>

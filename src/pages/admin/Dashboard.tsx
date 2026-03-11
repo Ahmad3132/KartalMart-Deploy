@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Users, Ticket, CheckCircle, Activity, Printer, Eye, Search, AlertCircle, Edit2, Send, FileDown, TrendingUp, DollarSign, UserPlus, PieChart as PieChartIcon, BarChart as BarChartIcon, MessageSquare } from 'lucide-react';
+import { Users, Ticket, CheckCircle, Activity, Printer, Eye, Search, AlertCircle, Edit2, Send, FileDown, TrendingUp, DollarSign, UserPlus, PieChart as PieChartIcon, BarChart as BarChartIcon, MessageSquare, ArrowRight, Clock, ShieldCheck } from 'lucide-react';
 import { handleResponse } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { TicketCard } from '../../components/TicketCard';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<any>(null);
   const [graphData, setGraphData] = useState<any>(null);
   const [tickets, setTickets] = useState<any[]>([]);
@@ -212,143 +214,144 @@ export default function AdminDashboard() {
     return mobile.slice(0, -3) + '***';
   };
 
-  if (!stats) return <div className="animate-pulse p-8">Loading...</div>;
-
-  const statCards = [
-    { name: 'Active Campaign', value: stats.activeCampaign, icon: Activity, color: 'text-blue-600', bg: 'bg-blue-100' },
-    { name: 'Tickets Today', value: stats.ticketsToday, icon: Ticket, color: 'text-green-600', bg: 'bg-green-100' },
-    { name: 'Tickets This Month', value: stats.ticketsMonth, icon: Ticket, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-    { name: 'Pending Approvals', value: stats.pendingApprovals, icon: CheckCircle, color: 'text-orange-600', bg: 'bg-orange-100' },
-    { name: 'Total Revenue', value: `PKR ${stats.totalRevenue.toLocaleString()}`, icon: Activity, color: 'text-purple-600', bg: 'bg-purple-100' },
-    { name: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-100' },
-  ];
-
-  const filteredTickets = tickets.filter(t => 
-    (t.ticket_id?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-    (t.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-    (t.tx_id?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+  if (!stats) return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+    </div>
   );
 
+  const statCards = [
+    { name: 'Active Campaign', value: stats.activeCampaign, icon: Activity, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { name: 'Tickets Today', value: stats.ticketsToday, icon: Ticket, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { name: 'Tickets This Month', value: stats.ticketsMonth, icon: Ticket, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { name: 'Pending Approvals', value: stats.pendingApprovals, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
+    { name: 'Total Revenue', value: `PKR ${stats.totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { name: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+  ];
+
+  const COLORS = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Kartal Group Admin Dashboard</h1>
+    <div className="max-w-7xl mx-auto space-y-8 pb-12">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <p className="mt-1 text-gray-500">System overview and real-time analytics for Kartal Group.</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => navigate('/admin/campaigns')}
+            className="inline-flex items-center px-4 py-2 border border-gray-200 text-sm font-medium rounded-xl text-gray-700 bg-white hover:bg-gray-50 transition-all"
+          >
+            <Activity className="w-4 h-4 mr-2" />
+            Campaigns
+          </button>
+          <button
+            onClick={() => navigate('/admin/users')}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-xl shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 transition-all"
+          >
+            <UserPlus className="w-4 h-4 mr-2" />
+            Manage Users
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.name} className="bg-white overflow-hidden shadow-sm rounded-xl border border-gray-100">
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className={`p-3 rounded-lg ${stat.bg}`}>
-                      <Icon className={`w-6 h-6 ${stat.color}`} />
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
-                      <dd>
-                        <div className="text-2xl font-semibold text-gray-900">{stat.value}</div>
-                      </dd>
-                    </dl>
-                  </div>
+            <div key={stat.name} className="bg-white overflow-hidden shadow-sm rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow">
+              <div className="flex flex-col">
+                <div className={`p-2 rounded-lg ${stat.bg} w-fit mb-3`}>
+                  <Icon className={`w-5 h-5 ${stat.color}`} />
                 </div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{stat.name}</p>
+                <p className="text-xl font-bold text-gray-900 mt-1">{stat.value}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      {isMounted && graphData && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Revenue/Sales Chart */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center">
               <TrendingUp className="w-5 h-5 mr-2 text-indigo-600" />
-              Revenue Trend (Last 30 Days)
+              Revenue Trends
             </h3>
-            <div className="min-h-[256px] relative">
-              <ResponsiveContainer width="99%" height={256} minWidth={0} minHeight={0} debounce={100}>
-                <LineChart data={graphData.revenue}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="day" fontSize={10} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="total" stroke="#4f46e5" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <select className="text-sm border-gray-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+              <option>Last 7 Days</option>
+              <option>Last 30 Days</option>
+            </select>
           </div>
-
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-              <BarChartIcon className="w-5 h-5 mr-2 text-emerald-600" />
-              Ticket Sales Trend
-            </h3>
-            <div className="min-h-[256px] relative">
-              <ResponsiveContainer width="99%" height={256} minWidth={0} minHeight={0} debounce={100}>
-                <BarChart data={graphData.sales}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="day" fontSize={10} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
+          <div className="h-80">
+            {graphData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={graphData.revenue}>
+                  <defs>
+                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9CA3AF'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9CA3AF'}} />
+                  <Tooltip 
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
+                    itemStyle={{fontSize: '12px', fontWeight: 'bold'}}
+                  />
+                  <Area type="monotone" dataKey="amount" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                </AreaChart>
               </ResponsiveContainer>
-            </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-400 italic">Loading chart data...</div>
+            )}
           </div>
+        </div>
 
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-              <PieChartIcon className="w-5 h-5 mr-2 text-purple-600" />
-              Online vs Offline Sales
+        {/* Distribution Chart */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center">
+              <PieChartIcon className="w-5 h-5 mr-2 text-indigo-600" />
+              Payment Distribution
             </h3>
-            <div className="min-h-[256px] relative">
-              <ResponsiveContainer width="99%" height={256} minWidth={0} minHeight={0} debounce={100}>
+          </div>
+          <div className="h-80">
+            {graphData ? (
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={graphData.onlineVsOffline.map((d: any) => ({
-                      name: d.payment_type === 'ONLINE' ? 'Online' : 'Offline',
-                      value: d.count
-                    }))}
+                    data={graphData.onlineVsOffline}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
-                    outerRadius={80}
+                    outerRadius={100}
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    <Cell fill="#8b5cf6" />
-                    <Cell fill="#f43f5e" />
+                    {graphData.onlineVsOffline.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend />
+                  <Tooltip 
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
+                  />
+                  <Legend verticalAlign="bottom" height={36}/>
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-              <UserPlus className="w-5 h-5 mr-2 text-blue-600" />
-              Customer Growth
-            </h3>
-            <div className="min-h-[256px] relative">
-              <ResponsiveContainer width="99%" height={256} minWidth={0} minHeight={0} debounce={100}>
-                <LineChart data={graphData.growth}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="day" fontSize={10} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-400 italic">Loading chart data...</div>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
@@ -359,324 +362,247 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {pendingTxs.length > 0 && (
-        <div className="bg-orange-50 shadow-sm rounded-xl border border-orange-200 overflow-hidden">
-          <div className="p-6 border-b border-orange-200 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-orange-900">Pending Approvals Required</h2>
-            <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded-full">{pendingTxs.length}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Recent Tickets */}
+        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-50 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center">
+              <Ticket className="w-5 h-5 mr-2 text-indigo-600" />
+              Recent Tickets
+            </h3>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search tickets..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-indigo-500 focus:border-indigo-500 w-48 md:w-64"
+                />
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-orange-200">
-              <thead className="bg-orange-100/50">
+            <table className="min-w-full divide-y divide-gray-100">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-orange-700 uppercase">Tx ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-orange-700 uppercase">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-orange-700 uppercase">Amount</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-orange-700 uppercase">Action</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Ticket ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Agent</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-orange-100">
-                {pendingTxs.map(tx => (
-                  <tr key={tx.id}>
-                    <td className="px-6 py-4 text-sm font-mono text-orange-900">{tx.tx_id}</td>
-                    <td className="px-6 py-4 text-sm text-orange-800">{tx.user_email}</td>
-                    <td className="px-6 py-4 text-sm text-orange-800">PKR {tx.amount}</td>
-                    <td className="px-6 py-4 text-right space-x-2">
-                      {tx.receipt_url && (
-                        <a 
-                          href={tx.receipt_url} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="inline-flex items-center px-2 py-1 bg-white border border-orange-200 text-orange-700 rounded text-xs font-bold hover:bg-orange-50 transition-colors"
-                        >
-                          <Eye className="w-3 h-3 mr-1" />
-                          View
-                        </a>
-                      )}
-                      <button 
-                        onClick={() => handleApprove(tx.id)}
-                        className="bg-orange-600 text-white px-3 py-1 rounded text-xs font-bold hover:bg-orange-700 transition-colors"
-                      >
-                        Approve
-                      </button>
+              <tbody className="bg-white divide-y divide-gray-50">
+                {tickets.map((ticket) => (
+                  <tr key={ticket.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-mono font-bold text-indigo-600">{ticket.ticket_id}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{ticket.name}</div>
+                      <div className="text-xs text-gray-500">{maskMobile(ticket.mobile)}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{ticket.generated_by_nick || ticket.user_email}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center space-x-3">
+                        <button onClick={() => setSelectedTicket(ticket)} className="text-indigo-600 hover:text-indigo-900">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditingTicket(ticket)} className="text-blue-600 hover:text-blue-900">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handlePrint(ticket)} className="text-gray-600 hover:text-gray-900">
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleSendPDF(ticket)} className="text-emerald-600 hover:text-emerald-900">
+                          <Send className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      <div className="bg-white shadow-sm rounded-xl border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <h2 className="text-lg font-bold text-gray-900">All Tickets</h2>
-          <div className="flex flex-col lg:flex-row lg:items-center gap-4 w-full lg:w-auto">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="flex flex-col">
-                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">From</label>
-                <input 
-                  type="date" 
-                  value={startDate}
-                  onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
-                  className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-              <div className="flex flex-col">
-                <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">To</label>
-                <input 
-                  type="date" 
-                  value={endDate}
-                  onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
-                  className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto mt-auto sm:mt-0 lg:mt-4">
-              <select 
-                value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-[38px]"
+          {/* Pagination */}
+          <div className="p-4 border-t border-gray-50 flex items-center justify-between">
+            <p className="text-sm text-gray-500">Showing {tickets.length} of {totalTickets} tickets</p>
+            <div className="flex gap-2">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => p - 1)}
+                className="px-3 py-1 border border-gray-200 rounded-lg text-sm disabled:opacity-50"
               >
-                <option value="">All Status</option>
-                <option value="Printed">Printed</option>
-                <option value="Unprinted">Unprinted</option>
-                <option value="Reprinted">Reprinted</option>
-              </select>
-              <div className="relative max-w-xs w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search tickets..."
-                  value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm h-[38px]"
-                />
-              </div>
+                Prev
+              </button>
+              <button
+                disabled={currentPage * 10 >= totalTickets}
+                onClick={() => setCurrentPage(p => p + 1)}
+                className="px-3 py-1 border border-gray-200 rounded-lg text-sm disabled:opacity-50"
+              >
+                Next
+              </button>
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tx ID</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Generated By</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {Array.isArray(tickets) && tickets.map((ticket) => {
-                let printBtnClass = "bg-gray-100 text-gray-700 hover:bg-gray-200";
-                if (ticket.printed_count === 1) printBtnClass = "bg-green-100 text-green-700 hover:bg-green-200";
-                if (ticket.printed_count > 1) printBtnClass = "bg-red-100 text-red-700 hover:bg-red-200";
-
-                return (
-                  <tr key={ticket.id} className="hover:bg-gray-50 group relative">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-indigo-600">
-                      {ticket.ticket_id}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{ticket.name}</div>
-                      <div className="text-xs text-gray-500">{maskMobile(ticket.mobile)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                      {ticket.tx_id}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 relative">
-                      {ticket.generated_by_nick || ticket.generated_by}
-                      <div className="absolute z-10 hidden group-hover:block bg-gray-900 text-white text-[10px] p-2 rounded shadow-lg -top-8 left-0 whitespace-nowrap">
-                        Email: {ticket.generated_by}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        ticket.printed_count > 0 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {ticket.printed_count > 0 ? 'Printed' : 'Unprinted'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      <button 
-                        onClick={() => setEditingTicket(ticket)}
-                        className="text-indigo-600 hover:text-indigo-900 p-2 rounded-lg hover:bg-indigo-50"
-                        title="Edit Ticket"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setSelectedTicket(ticket)}
-                        className="text-indigo-600 hover:text-indigo-900 p-2 rounded-lg hover:bg-indigo-50"
-                        title="View Ticket"
+        {/* Pending Approvals */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-50 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center">
+              <Clock className="w-5 h-5 mr-2 text-orange-500" />
+              Pending Approvals
+            </h3>
+            <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">
+              {pendingTxs.length}
+            </span>
+          </div>
+          <div className="divide-y divide-gray-50 max-h-[600px] overflow-y-auto">
+            {pendingTxs.length > 0 ? (
+              pendingTxs.map((tx) => (
+                <div key={tx.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">{tx.name || 'Unknown'}</p>
+                      <p className="text-xs text-gray-500 font-mono">{tx.tx_id}</p>
+                    </div>
+                    <p className="text-sm font-bold text-indigo-600">PKR {tx.amount}</p>
+                  </div>
+                  <div className="flex items-center justify-between mt-4">
+                    <span className="text-xs text-gray-400">{new Date(tx.date).toLocaleDateString()}</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/admin/transactions/pending`)}
+                        className="p-2 text-gray-400 hover:text-gray-600"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleSendPDF(ticket)}
-                        disabled={isGeneratingPDF}
-                        className="text-green-600 hover:text-green-900 p-2 rounded-lg hover:bg-green-50 disabled:opacity-50"
-                        title="Send PDF"
+                      <button
+                        onClick={() => handleApprove(tx.id)}
+                        className="px-3 py-1 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 transition-all"
                       >
-                        <Send className="w-4 h-4" />
+                        Approve
                       </button>
-                      <button 
-                        onClick={() => handlePrint(ticket)}
-                        className={`p-2 rounded-lg transition-colors ${printBtnClass}`}
-                        title="Print Ticket"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        
-        {/* Pagination */}
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-          <div className="text-sm text-gray-500">
-            Showing <span className="font-medium">{(currentPage - 1) * 20 + 1}</span> to <span className="font-medium">{Math.min(currentPage * 20, totalTickets)}</span> of <span className="font-medium">{totalTickets}</span> tickets
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-10 text-center text-gray-400 italic">
+                No pending approvals.
+              </div>
+            )}
           </div>
-          <div className="flex space-x-2">
-            <button 
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(prev => prev - 1)}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 bg-white"
+          <div className="p-4 border-t border-gray-50">
+            <button
+              onClick={() => navigate('/admin/transactions/pending')}
+              className="w-full py-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 flex items-center justify-center"
             >
-              Previous
-            </button>
-            <button 
-              disabled={currentPage * 20 >= totalTickets}
-              onClick={() => setCurrentPage(prev => prev + 1)}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 bg-white"
-            >
-              Next
+              View All Approvals <ArrowRight className="w-4 h-4 ml-2" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Edit Ticket Modal */}
       {editingTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Edit Ticket Details</h3>
-              <button onClick={() => setEditingTicket(null)} className="text-gray-400 hover:text-gray-600">×</button>
-            </div>
-            <form onSubmit={handleEditTicket} className="p-6 space-y-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl">
+            <h3 className="text-2xl font-bold text-gray-900 mb-6">Edit Ticket Information</h3>
+            <form onSubmit={handleEditTicket} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Customer Name</label>
-                <input name="name" required defaultValue={editingTicket.name} className="mt-1 block w-full border rounded-md p-2" />
+                <label className="block text-sm font-bold text-gray-700 mb-1 uppercase tracking-wider">Customer Name</label>
+                <input
+                  name="name"
+                  defaultValue={editingTicket.name}
+                  required
+                  className="w-full border-gray-200 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 p-3"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Mobile</label>
-                <input name="mobile" required defaultValue={editingTicket.mobile} className="mt-1 block w-full border rounded-md p-2" />
+                <label className="block text-sm font-bold text-gray-700 mb-1 uppercase tracking-wider">Mobile Number</label>
+                <input
+                  name="mobile"
+                  defaultValue={editingTicket.mobile}
+                  required
+                  className="w-full border-gray-200 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 p-3"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Address</label>
-                <textarea name="address" required defaultValue={editingTicket.address} className="mt-1 block w-full border rounded-md p-2" rows={3} />
+                <label className="block text-sm font-bold text-gray-700 mb-1 uppercase tracking-wider">Address</label>
+                <textarea
+                  name="address"
+                  defaultValue={editingTicket.address}
+                  className="w-full border-gray-200 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 p-3"
+                  rows={3}
+                />
               </div>
-              <div className="flex justify-end space-x-3 pt-4">
-                <button type="button" onClick={() => setEditingTicket(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">Save Changes</button>
+              <div className="flex gap-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditingTicket(null)}
+                  className="flex-1 py-3 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700"
+                >
+                  Save Changes
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Ticket View Modal */}
+      {/* Modals & Hidden Elements */}
       {selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-gray-900">Ticket Details</h3>
-              <button onClick={() => setSelectedTicket(null)} className="text-gray-400 hover:text-gray-600">×</button>
-            </div>
-            <div className="p-8 flex flex-col items-center space-y-6">
-              <div className="bg-white p-4 border-2 border-gray-100 rounded-2xl shadow-inner">
-                <QRCodeSVG 
-                  value={JSON.stringify({
-                    id: selectedTicket.ticket_id,
-                    name: selectedTicket.name,
-                    tx: selectedTicket.tx_id,
-                    gen: selectedTicket.generation_id
-                  })}
-                  size={160}
-                />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl relative">
+            <button onClick={() => setSelectedTicket(null)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600">
+              <AlertCircle className="w-6 h-6" />
+            </button>
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Ticket className="w-8 h-8 text-indigo-600" />
               </div>
-              <div className="text-center space-y-2">
-                <h4 className="text-4xl font-black text-indigo-600 tracking-tighter">{selectedTicket.ticket_id}</h4>
-                <p className="text-lg font-medium text-gray-900">{selectedTicket.name}</p>
-                <p className="text-sm text-gray-500">{maskMobile(selectedTicket.mobile)}</p>
-                <p className="text-xs text-gray-400 italic">{selectedTicket.address}</p>
-                <div className="pt-4 grid grid-cols-2 gap-4 text-left w-full border-t border-gray-100">
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-gray-400">Transaction ID</p>
-                    <p className="text-xs font-mono text-gray-700">{selectedTicket.tx_id}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-gray-400">Generation ID</p>
-                    <p className="text-xs font-mono text-gray-700">{selectedTicket.generation_id}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-gray-400">Ticket Info</p>
-                    <p className="text-xs font-mono text-gray-700">{selectedTicket.person_ticket_index} of {selectedTicket.total_tickets_in_tx}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-gray-400">Generated By</p>
-                    <p className="text-xs font-mono text-gray-700">{selectedTicket.generated_by_nick || selectedTicket.generated_by}</p>
-                  </div>
-                  {selectedTicket.last_printed_by_nick && (
-                    <div className="col-span-2">
-                      <p className="text-[10px] uppercase font-bold text-gray-400">Last Printed By</p>
-                      <p className="text-xs font-mono text-gray-700">{selectedTicket.last_printed_by_nick}</p>
-                    </div>
-                  )}
-                </div>
+              <h3 className="text-2xl font-bold text-gray-900">Ticket Details</h3>
+              <p className="text-gray-500">ID: {selectedTicket.ticket_id}</p>
+            </div>
+            <div className="space-y-4 bg-gray-50 rounded-2xl p-6 mb-8">
+              <div className="flex justify-between border-b border-gray-200 pb-2">
+                <span className="text-gray-500">Customer</span>
+                <span className="font-bold text-gray-900">{selectedTicket.name}</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-200 pb-2">
+                <span className="text-gray-500">Mobile</span>
+                <span className="font-bold text-gray-900">{selectedTicket.mobile}</span>
+              </div>
+              <div className="flex justify-between border-b border-gray-200 pb-2">
+                <span className="text-gray-500">Transaction ID</span>
+                <span className="font-bold text-indigo-600 font-mono">{selectedTicket.tx_id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Generated By</span>
+                <span className="font-bold text-gray-900">{selectedTicket.generated_by_nick || selectedTicket.user_email}</span>
               </div>
             </div>
-            <div className="p-4 bg-gray-50 flex flex-col space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={() => handleSendPDF(selectedTicket)}
-                  disabled={isGeneratingPDF}
-                  className="flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  {isGeneratingPDF ? 'Generating...' : 'Share PDF'}
-                </button>
-                <button 
-                  onClick={() => {
-                    const message = `Kartal Group Ticket\nID: ${selectedTicket.ticket_id}\nName: ${selectedTicket.name}\nTxID: ${selectedTicket.tx_id}`;
-                    const url = `https://wa.me/${selectedTicket.mobile.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
-                    window.open(url, 'whatsapp');
-                  }}
-                  className="flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-                >
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  WhatsApp
-                </button>
-              </div>
-              <button 
-                onClick={() => handlePrint(selectedTicket)}
-                className="flex items-center justify-center px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => { handlePrint(selectedTicket); setSelectedTicket(null); }}
+                className="flex items-center justify-center py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
               >
-                <Printer className="w-4 h-4 mr-2" />
-                Print Ticket
+                <Printer className="w-4 h-4 mr-2" /> Print
               </button>
-              <button 
-                onClick={() => setSelectedTicket(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+              <button
+                onClick={() => { handleSendPDF(selectedTicket); setSelectedTicket(null); }}
+                className="flex items-center justify-center py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
               >
-                Close
+                <Send className="w-4 h-4 mr-2" /> Send PDF
               </button>
             </div>
           </div>
