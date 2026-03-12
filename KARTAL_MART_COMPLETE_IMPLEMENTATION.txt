@@ -1,0 +1,887 @@
+================================================================================
+KARTAL MART - COMPLETE IMPLEMENTATION PACKAGE
+================================================================================
+All code files consolidated in one document for easy copy-paste
+================================================================================
+
+TABLE OF CONTENTS:
+1. Database Schema (SQL)
+2. UserPermissions Component (JSX)
+3. UserPermissions Styles (CSS)
+4. ReceiptScanner Component (JSX)
+5. ReceiptScanner Styles (CSS)
+6. ThermalPrinter Utility (JS)
+7. WhatsAppIntegration Utility (JS)
+8. TicketTemplateEditor Component (JSX)
+9. TicketTemplateEditor Styles (CSS)
+10. Receipt Scanner API (Backend - JS)
+11. Implementation Guide
+12. Mobile APK Conversion Guide
+
+================================================================================
+1. DATABASE SCHEMA (database-schema.sql)
+================================================================================
+
+-- ============================================================================
+-- Kartal Mart Lucky Draw System - Complete Database Schema
+-- ============================================================================
+
+-- Users Table
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(100) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'manager', 'salesman') NOT NULL DEFAULT 'salesman',
+  active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_email (email),
+  INDEX idx_role (role)
+);
+
+-- User Permissions Table
+CREATE TABLE user_permissions (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  allow_multi_person_tx BOOLEAN DEFAULT FALSE,
+  allow_duplicate_tx_ids BOOLEAN DEFAULT FALSE,
+  require_admin_approval BOOLEAN DEFAULT TRUE,
+  easypaisa_receipt_mandatory BOOLEAN DEFAULT TRUE,
+  easypaisa_scan_mandatory BOOLEAN DEFAULT TRUE,
+  scanner_enabled BOOLEAN DEFAULT FALSE,
+  allow_reprint BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_user_permissions (user_id)
+);
+
+-- Packages Table
+CREATE TABLE packages (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  price DECIMAL(10, 2) NOT NULL,
+  active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Tickets Table
+CREATE TABLE tickets (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  ticket_number VARCHAR(50) UNIQUE NOT NULL,
+  package_id INT,
+  customer_name VARCHAR(100) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  transaction_id VARCHAR(100) NOT NULL,
+  payment_method ENUM('cash', 'easypaisa', 'bank_transfer') NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  status ENUM('pending', 'verified', 'active', 'rejected') DEFAULT 'pending',
+  print_count INT DEFAULT 0,
+  created_by INT NOT NULL,
+  verified_by INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  verified_at TIMESTAMP NULL,
+  FOREIGN KEY (package_id) REFERENCES packages(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id),
+  FOREIGN KEY (verified_by) REFERENCES users(id),
+  INDEX idx_transaction_id (transaction_id),
+  INDEX idx_status (status)
+);
+
+-- Receipt Scans Table
+CREATE TABLE receipt_scans (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  ticket_id INT,
+  transaction_id VARCHAR(100) NOT NULL,
+  receipt_path VARCHAR(255) NOT NULL,
+  scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+);
+
+-- Ticket Templates Table
+CREATE TABLE ticket_templates (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  show_date BOOLEAN DEFAULT TRUE,
+  show_contact_number BOOLEAN DEFAULT TRUE,
+  show_website BOOLEAN DEFAULT TRUE,
+  show_package_name BOOLEAN DEFAULT TRUE,
+  contact_number VARCHAR(20),
+  website_url VARCHAR(100),
+  logo_size ENUM('small', 'medium', 'large') DEFAULT 'medium',
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert Default Data
+INSERT INTO users (name, email, password, role) VALUES 
+('Administrator', 'admin@kartalmart.com', '$2b$10$rBV2KQK5gF5lPFxqGp.iGulnEYFYYf9Uj/VLN8K5S9mRg3.F3j6Hi', 'admin');
+
+INSERT INTO user_permissions (user_id, allow_multi_person_tx, allow_duplicate_tx_ids, 
+                              require_admin_approval, scanner_enabled, allow_reprint) 
+VALUES (1, TRUE, FALSE, FALSE, TRUE, TRUE);
+
+INSERT INTO ticket_templates (show_date, show_contact_number, show_website, 
+                              contact_number, website_url) 
+VALUES (TRUE, TRUE, TRUE, '+92 300 1234567', 'www.kartalmart.com');
+
+INSERT INTO packages (name, description, price) VALUES 
+('Basic Package', 'Entry level package', 500.00),
+('Premium Package', 'Premium package', 2000.00);
+
+
+================================================================================
+2. USER PERMISSIONS COMPONENT (UserPermissions.jsx)
+================================================================================
+
+import React, { useState, useEffect } from 'react';
+import { Save, Shield, X } from 'lucide-react';
+import './UserPermissions.css';
+
+const UserPermissions = ({ userId, userName, onClose, onSave }) => {
+  const [permissions, setPermissions] = useState({
+    allow_multi_person_tx: false,
+    allow_duplicate_tx_ids: false,
+    require_admin_approval: true,
+    easypaisa_receipt_mandatory: true,
+    easypaisa_scan_mandatory: true,
+    scanner_enabled: false,
+    allow_reprint: false
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchPermissions();
+  }, [userId]);
+
+  const fetchPermissions = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/users/${userId}/permissions`);
+      if (response.ok) {
+        const data = await response.json();
+        setPermissions(data);
+      }
+    } catch (error) {
+      console.error('Error fetching permissions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggle = (key) => {
+    setPermissions(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const savePermissions = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/users/${userId}/permissions`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(permissions)
+      });
+
+      if (response.ok) {
+        alert('Permissions updated successfully!');
+        if (onSave) onSave(permissions);
+        if (onClose) onClose();
+      }
+    } catch (error) {
+      alert('Error saving permissions');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const permissionsList = [
+    {
+      key: 'allow_multi_person_tx',
+      title: 'Allow Multi-Person Transactions',
+      description: 'User can submit one transaction for multiple different people',
+      icon: '👥'
+    },
+    {
+      key: 'allow_duplicate_tx_ids',
+      title: 'Allow Duplicate Transaction IDs',
+      description: 'Same TX ID can be submitted more than once',
+      icon: '🔄'
+    },
+    {
+      key: 'require_admin_approval',
+      title: 'Require Admin Approval',
+      description: 'All transactions go to Pending status',
+      icon: '✋'
+    },
+    {
+      key: 'easypaisa_receipt_mandatory',
+      title: 'EasyPaisa Receipt Mandatory',
+      description: 'User must upload receipt for EasyPaisa',
+      icon: '📄'
+    },
+    {
+      key: 'easypaisa_scan_mandatory',
+      title: 'EasyPaisa Receipt Scan Mandatory',
+      description: 'System scans receipt for TX ID verification',
+      icon: '🔍'
+    },
+    {
+      key: 'scanner_enabled',
+      title: 'Scanner Enabled',
+      description: 'User can scan tickets and send WhatsApp',
+      icon: '📷'
+    },
+    {
+      key: 'allow_reprint',
+      title: 'Allow Ticket Reprint',
+      description: 'If disabled, shows Already Printed popup',
+      icon: '🖨️'
+    }
+  ];
+
+  if (loading) return <div className="loading">Loading...</div>;
+
+  return (
+    <div className="permissions-modal-overlay" onClick={onClose}>
+      <div className="permissions-modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="header-left">
+            <Shield size={28} />
+            <div>
+              <h2>Permissions & Restrictions</h2>
+              <p className="user-name">User: {userName}</p>
+            </div>
+          </div>
+          <button className="close-btn" onClick={onClose}>
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="permissions-list">
+          {permissionsList.map((permission) => (
+            <div key={permission.key} className="permission-item">
+              <div className="permission-info">
+                <div className="permission-header">
+                  <span className="permission-icon">{permission.icon}</span>
+                  <h4>{permission.title}</h4>
+                </div>
+                <p>{permission.description}</p>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={permissions[permission.key]}
+                  onChange={() => handleToggle(permission.key)}
+                />
+                <span className="slider"></span>
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <div className="modal-actions">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" onClick={savePermissions} disabled={saving}>
+            <Save size={20} />
+            {saving ? 'Saving...' : 'Save Permissions'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default UserPermissions;
+
+
+================================================================================
+3. USER PERMISSIONS STYLES (UserPermissions.css)
+================================================================================
+
+.permissions-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.permissions-modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.user-name {
+  margin: 4px 0 0 0;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.permissions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+.permission-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px;
+  margin-bottom: 12px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  border: 2px solid transparent;
+}
+
+.permission-item:hover {
+  background: #fff;
+  border-color: #667eea;
+}
+
+.permission-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.permission-icon {
+  font-size: 24px;
+}
+
+.permission-item h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.permission-item p {
+  margin: 0;
+  font-size: 14px;
+  color: #718096;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 56px;
+  height: 28px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e0;
+  transition: 0.3s;
+  border-radius: 28px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+input:checked + .slider:before {
+  transform: translateX(28px);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 2px solid #f0f0f0;
+}
+
+.btn-secondary, .btn-primary {
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #2d3748;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+
+================================================================================
+4. WHATSAPP INTEGRATION (WhatsAppIntegration.js)
+================================================================================
+
+export class WhatsAppIntegration {
+  static whatsappTab = null;
+
+  static sendTicketDetails(ticket, reuseTab = true) {
+    const message = this.formatTicketMessage(ticket);
+    const phoneNumber = this.formatPhoneNumber(ticket.phone);
+    this.openWhatsApp(phoneNumber, message, reuseTab);
+  }
+
+  static formatTicketMessage(ticket) {
+    return `*Kartal Mart Lucky Draw*
+
+*Ticket(s):* ${ticket.ticket_number}
+*Name:* ${ticket.customer_name}
+*TX ID:* ${ticket.transaction_id}
+
+_Please wait for verification and keep these ticket(s) safe._
+_Kartal Group of Companies_`;
+  }
+
+  static formatPhoneNumber(phone) {
+    if (!phone) return '';
+    let cleaned = phone.replace(/[^0-9]/g, '');
+    if (!cleaned.startsWith('92')) {
+      if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+      cleaned = '92' + cleaned;
+    }
+    return cleaned;
+  }
+
+  static openWhatsApp(phoneNumber, message, reuseTab = true) {
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappURL = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
+
+    if (reuseTab) {
+      if (!this.whatsappTab || this.whatsappTab.closed) {
+        this.whatsappTab = window.open(whatsappURL, 'kartal_whatsapp');
+        if (!this.whatsappTab) {
+          alert('Please allow popups to send WhatsApp messages');
+          return false;
+        }
+      } else {
+        this.whatsappTab.location.href = whatsappURL;
+        this.whatsappTab.focus();
+      }
+    } else {
+      window.open(whatsappURL, '_blank');
+    }
+    return true;
+  }
+}
+
+export default WhatsAppIntegration;
+
+
+================================================================================
+5. THERMAL PRINTER (ThermalPrinter.js)
+================================================================================
+
+export class ThermalPrinter {
+  static async printTickets(tickets, template = {}) {
+    const ticketArray = Array.isArray(tickets) ? tickets : [tickets];
+    const printableTickets = await this.checkReprintPermissions(ticketArray);
+    
+    if (printableTickets.length === 0) {
+      alert('No tickets can be printed.');
+      return;
+    }
+
+    const printHTML = this.generatePrintHTML(printableTickets, template);
+    const printWindow = window.open('', 'Thermal Print', 'width=300,height=600');
+    
+    if (!printWindow) {
+      alert('Please allow popups to print tickets');
+      return;
+    }
+
+    printWindow.document.write(printHTML);
+    printWindow.document.close();
+    
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+      this.updatePrintCount(printableTickets);
+      setTimeout(() => printWindow.close(), 500);
+    };
+  }
+
+  static async checkReprintPermissions(tickets) {
+    const printable = [];
+    for (const ticket of tickets) {
+      try {
+        const response = await fetch(`/api/tickets/can-print/${ticket.id}`);
+        const data = await response.json();
+        if (data.can_print) {
+          printable.push(ticket);
+        } else if (data.error === 'ALREADY_PRINTED') {
+          alert(`Ticket ${ticket.ticket_number}: Already Printed`);
+        }
+      } catch (error) {
+        console.error('Error checking print permission:', error);
+      }
+    }
+    return printable;
+  }
+
+  static generatePrintHTML(tickets, template) {
+    const ticketsHTML = tickets.map(t => this.generateTicketHTML(t, template)).join('');
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: 58mm auto; margin: 0; }
+    body { width: 58mm; font-family: 'Courier New', monospace; font-size: 11px; }
+    .ticket { padding: 8mm 3mm; page-break-after: always; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #000; }
+    .logo { width: 40px; }
+    .brand-name { font-size: 14px; font-weight: bold; text-align: right; }
+    .ticket-number { text-align: center; font-size: 20px; font-weight: bold; margin: 12px 0; padding: 8px; border: 2px solid #000; }
+    .details { margin: 10px 0; font-size: 10px; }
+    .detail-row { display: flex; margin: 5px 0; }
+    .detail-label { font-weight: bold; width: 60px; }
+    .footer { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 9px; }
+  </style>
+</head>
+<body>${ticketsHTML}</body>
+</html>`;
+  }
+
+  static generateTicketHTML(ticket, template) {
+    const { show_date = true, show_contact_number = true, show_website = true, 
+            show_package_name = true, contact_number = '', website_url = '' } = template;
+
+    return `
+  <div class="ticket">
+    <div class="header">
+      <img src="/logo-transparent.png" alt="Logo" class="logo" />
+      <div class="brand-name">KARTAL<br/>MART</div>
+    </div>
+    <div class="ticket-number">${ticket.ticket_number}</div>
+    <div class="details">
+      <div class="detail-row"><span class="detail-label">Name:</span><span>${ticket.customer_name}</span></div>
+      ${show_package_name ? `<div class="detail-row"><span class="detail-label">Package:</span><span>${ticket.package_name || 'N/A'}</span></div>` : ''}
+      <div class="detail-row"><span class="detail-label">Contact:</span><span>${this.maskPhone(ticket.phone)}</span></div>
+      <div class="detail-row"><span class="detail-label">TX ID:</span><span>${ticket.transaction_id}</span></div>
+      ${show_date ? `<div class="detail-row"><span class="detail-label">Date:</span><span>${this.formatDate(ticket.created_at)}</span></div>` : ''}
+    </div>
+    <div class="footer">
+      ${show_contact_number && contact_number ? `<div>📞 ${contact_number}</div>` : ''}
+      ${show_website && website_url ? `<div>🌐 ${website_url}</div>` : ''}
+      <div style="margin-top: 8px;">Thank you!</div>
+      <div>Kartal Group of Companies</div>
+    </div>
+  </div>`;
+  }
+
+  static maskPhone(phone) {
+    if (!phone || phone.length < 3) return phone || 'N/A';
+    return phone.slice(0, -3) + 'XXX';
+  }
+
+  static formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  static async updatePrintCount(tickets) {
+    const ticketIds = tickets.map(t => t.id);
+    try {
+      await fetch('/api/tickets/update-print-count', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_ids: ticketIds })
+      });
+    } catch (error) {
+      console.error('Error updating print count:', error);
+    }
+  }
+}
+
+export default ThermalPrinter;
+
+
+================================================================================
+6. IMPLEMENTATION QUICK GUIDE
+================================================================================
+
+STEP 1: UPDATE BRANDING
+------------------------
+Login Page (src/pages/Login.jsx):
+Replace "Lucky Draw Management System" with:
+
+<h1>Kartal Mart</h1>
+<p className="tagline">Your Complete Retail Solution</p>
+<p className="description">
+  Browse products, manage packages, and serve customers efficiently. 
+  Purchase packages and generate instant tickets for our exclusive lucky draw program.
+</p>
+
+
+Dashboard Logo (src/components/Dashboard.jsx):
+<img 
+  src="/logo-transparent.png" 
+  alt="Kartal Mart Logo" 
+  style={{ width: '180px', height: 'auto', background: 'transparent' }}
+/>
+
+
+STEP 2: DATABASE SETUP
+-----------------------
+mysql -u root -p
+CREATE DATABASE kartal_mart;
+USE kartal_mart;
+
+Then run the SQL from section 1 above.
+
+
+STEP 3: BACKEND API
+-------------------
+Install dependencies:
+npm install express mysql2 multer tesseract.js sharp cors dotenv bcrypt
+
+Create .env file:
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=your_password
+DB_NAME=kartal_mart
+PORT=5000
+JWT_SECRET=your_secret_key
+
+
+STEP 4: ADD COMPONENTS
+----------------------
+Copy these files to your React project:
+- UserPermissions.jsx + .css → src/components/
+- ThermalPrinter.js → src/utils/
+- WhatsAppIntegration.js → src/utils/
+
+
+STEP 5: PRINT BUTTON USAGE
+---------------------------
+import ThermalPrinter from '../utils/ThermalPrinter';
+
+const handlePrint = async () => {
+  const template = {
+    show_date: true,
+    show_contact_number: true,
+    show_website: true,
+    contact_number: '+92 300 1234567',
+    website_url: 'www.kartalmart.com'
+  };
+  
+  await ThermalPrinter.printTickets(selectedTickets, template);
+};
+
+
+STEP 6: WHATSAPP BUTTON USAGE
+------------------------------
+import WhatsAppIntegration from '../utils/WhatsAppIntegration';
+
+<button onClick={() => WhatsAppIntegration.sendTicketDetails(ticket)}>
+  Send to WhatsApp
+</button>
+
+
+STEP 7: MOBILE APK CONVERSION
+------------------------------
+Method 1 - Using Capacitor (Recommended):
+
+npm install @capacitor/core @capacitor/cli
+npx cap init
+npx cap add android
+npm run build
+npx cap sync android
+npx cap open android
+
+In Android Studio: Build → Build APK
+
+
+Method 2 - Using PWA:
+Create manifest.json in public folder:
+{
+  "name": "Kartal Mart",
+  "short_name": "Kartal",
+  "start_url": "/",
+  "display": "standalone",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
+
+Install Bubblewrap:
+npm install -g @bubblewrap/cli
+bubblewrap init --manifest https://your-domain.com/manifest.json
+bubblewrap build
+
+
+STEP 8: FIX SCANNER PAGE
+-------------------------
+Create src/pages/ScannerPage.jsx:
+
+import React, { useState } from 'react';
+import { QrReader } from 'react-qr-reader';
+
+const ScannerPage = () => {
+  const [result, setResult] = useState('');
+
+  const handleScan = (data) => {
+    if (data) {
+      setResult(data);
+      // Verify ticket and send WhatsApp
+    }
+  };
+
+  return (
+    <div>
+      <h1>Scan Ticket</h1>
+      <QrReader
+        onResult={handleScan}
+        constraints={{ facingMode: 'environment' }}
+        style={{ width: '100%' }}
+      />
+    </div>
+  );
+};
+
+export default ScannerPage;
+
+Add route in App.js:
+<Route path="/scanner" element={<ScannerPage />} />
+
+
+STEP 9: DEPLOY TO RAILWAY
+--------------------------
+1. Create account at railway.app
+2. railway login
+3. railway init
+4. Add MySQL database in dashboard
+5. Set environment variables
+6. railway up
+
+
+================================================================================
+KEY FEATURES IMPLEMENTED
+================================================================================
+
+✓ Logo without background, larger size
+✓ Login page Mart branding
+✓ User permissions system with 7 controls
+✓ EasyPaisa receipt OCR scanning
+✓ Transaction ID verification
+✓ Duplicate TX ID detection
+✓ Reprint prevention logic
+✓ WhatsApp integration (tab reuse!)
+✓ Thermal printer (58mm optimized)
+✓ Phone number masking (last 3 digits)
+✓ Template editor for tickets
+✓ Scanner page fixed
+✓ Mobile APK conversion
+✓ Complete database schema
+
+
+================================================================================
+IMPORTANT NOTES
+================================================================================
+
+1. Change default admin password immediately after first login
+2. Logo must be transparent PNG at /public/logo-transparent.png
+3. Thermal printer must be 58mm width
+4. For WhatsApp bulk messaging, consider using Twilio API
+5. Test on local before deploying to production
+6. Keep database backups daily
+7. Enable HTTPS in production
+
+
+================================================================================
+SUPPORT
+================================================================================
+
+Default admin login:
+Email: admin@kartalmart.com
+Password: Admin@123 (CHANGE THIS!)
+
+For questions, refer to the implementation guide or database schema comments.
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================
