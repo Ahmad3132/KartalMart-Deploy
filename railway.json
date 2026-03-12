@@ -1,17 +1,9 @@
-{
-  "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "cd frontend && npm install && npm run build"
-  },
-  "deploy": {
-    "startCommand": "cd frontend && npm start",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  }
-}
-```
-
-3. **Save as:** `railway.json` in your project root:
-```
-   C:\Users\PC\OneDrive\Pictures\Documents\GitHub\Kartal_G\railway.json
+{ 
+  "$schema": "https://railway.app/railway.schema.json", 
+  "build": { 
+    "builder": "NIXPACKS" 
+  }, 
+  "deploy": { 
+    "startCommand": "cd frontend && npm start" 
+  } 
+} 
