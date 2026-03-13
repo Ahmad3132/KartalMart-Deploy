@@ -8,7 +8,7 @@ import TicketList from './components/TicketList';
 import MarketingCampaigns from './components/MarketingCampaigns';
 import Scanner from './components/Scanner';
 import TicketTemplateEditor from './components/TicketTemplateEditor';
-import SystemSettings from './components/SystemSettings';
+//import SystemSettings from './components/SystemSettings';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -115,6 +115,7 @@ function App() {
             <Navigate to="/login" />
           } 
         />
+	{/*
         <Route 
           path="/settings" 
           element={
@@ -123,6 +124,7 @@ function App() {
             <Navigate to="/login" />
           } 
         />
+	*/}
         <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </Router>
