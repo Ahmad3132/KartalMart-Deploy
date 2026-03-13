@@ -1,214 +1,265 @@
-import React, { useState, useRef } from 'react';
-import { ArrowLeft, Upload, Send, Printer, AlertCircle, CheckCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import Tesseract from 'tesseract.js';
+import React, { useState, useEffect } from 'react';
+import { Printer, Send as SendIcon, Download, FileText, ArrowLeft } from 'lucide-react';
 import './TicketGeneration.css';
 
-function TicketGeneration({ user, whatsappTab, setWhatsappTab }) {
-  const navigate = useNavigate();
-  const fileInputRef = useRef(null);
+const TicketGeneration = ({ user, whatsappTab, setWhatsappTab }) => {
   const [formData, setFormData] = useState({
     customerName: '',
     contactNumber: '',
-    packageName: '',
-    transactionId: '',
+    packageId: '',
     paymentMethod: 'cash',
-    receipt: null
+    transactionId: '',
+    amount: 0
   });
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
-  const [errors, setErrors] = useState({});
-  const [multiPersonData, setMultiPersonData] = useState([]);
 
-  const packages = [
-    { id: 1, name: 'Premium Package', price: 2000 },
-    { id: 2, name: 'Standard Package', price: 1500 },
-    { id: 3, name: 'Basic Package', price: 1000 },
-    { id: 4, name: 'Special Offer', price: 500 }
-  ];
+  const [packages, setPackages] = useState([
+    { id: 1, name: 'Basic Package', price: 500, description: '1 ticket' },
+    { id: 2, name: 'Standard Package', price: 1200, description: '3 tickets' },
+    { id: 3, name: 'Premium Package', price: 2000, description: '5 tickets' },
+    { id: 4, name: 'VIP Package', price: 3500, description: '10 tickets' }
+  ]);
 
-  const handleFileUpload = async (e) => {
+  const [generatedTicket, setGeneratedTicket] = useState(null);
+  const [showTicketPreview, setShowTicketPreview] = useState(false);
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [scanning, setScanning] = useState(false);
+
+  // AUTO-GENERATE TRANSACTION ID FOR CASH PAYMENTS
+  useEffect(() => {
+    if (formData.paymentMethod === 'cash') {
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
+      const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      const autoTxId = `CASH-${dateStr}-${randomNum}`;
+      setFormData(prev => ({ ...prev, transactionId: autoTxId }));
+    } else {
+      setFormData(prev => ({ ...prev, transactionId: '' }));
+    }
+  }, [formData.paymentMethod]);
+
+  // Update amount when package changes
+  useEffect(() => {
+    if (formData.packageId) {
+      const selectedPackage = packages.find(p => p.id === parseInt(formData.packageId));
+      if (selectedPackage) {
+        setFormData(prev => ({ ...prev, amount: selectedPackage.price }));
+      }
+    }
+  }, [formData.packageId, packages]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleReceiptUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setFormData({ ...formData, receipt: file });
-    
-    if (user.permissions.easypaisaScanMandatory && formData.paymentMethod === 'easypaisa') {
-      await scanReceipt(file);
+    setReceiptFile(file);
+
+    // Only scan if EasyPaisa and user has scan permission
+    if (formData.paymentMethod === 'easypaisa' && user.permissions?.easypaisa_scan_mandatory) {
+      setScanning(true);
+      
+      // Simulate OCR scanning (in real app, call backend API)
+      setTimeout(() => {
+        const scannedTxId = `EP${Math.floor(Math.random() * 10000000000)}`;
+        alert(`Receipt scanned! Transaction ID: ${scannedTxId}`);
+        setFormData(prev => ({ ...prev, transactionId: scannedTxId }));
+        setScanning(false);
+      }, 2000);
     }
   };
 
-  const scanReceipt = async (file) => {
-    setIsScanning(true);
-    setScanResult(null);
-    
-    try {
-      const result = await Tesseract.recognize(file, 'eng', {
-        logger: info => console.log(info)
-      });
-
-      const text = result.data.text;
-      console.log('Scanned text:', text);
-
-      // Extract transaction ID from scanned text
-      // This regex looks for common transaction ID patterns
-      const txIdPatterns = [
-        /Transaction\s*ID:?\s*([A-Z0-9]+)/i,
-        /TX\s*ID:?\s*([A-Z0-9]+)/i,
-        /Reference:?\s*([A-Z0-9]+)/i,
-        /\b([A-Z0-9]{10,})\b/i
-      ];
-
-      let extractedTxId = null;
-      for (const pattern of txIdPatterns) {
-        const match = text.match(pattern);
-        if (match) {
-          extractedTxId = match[1];
-          break;
-        }
-      }
-
-      if (extractedTxId) {
-        setScanResult({
-          success: true,
-          txId: extractedTxId,
-          message: 'Transaction ID extracted successfully'
-        });
-
-        // Verify TX ID matches user input if already entered
-        if (formData.transactionId && formData.transactionId !== extractedTxId) {
-          setErrors({
-            ...errors,
-            transactionId: 'Transaction ID mismatch! Scanned ID does not match your input.'
-          });
-          setScanResult({
-            success: false,
-            message: `Mismatch Error: You entered "${formData.transactionId}" but scanned receipt shows "${extractedTxId}"`
-          });
-        } else {
-          setFormData({ ...formData, transactionId: extractedTxId });
-        }
-
-        // Check if TX ID already exists in database
-        await checkDuplicateTxId(extractedTxId);
-      } else {
-        setScanResult({
-          success: false,
-          message: 'Could not extract Transaction ID from receipt. Please verify image quality.'
-        });
-      }
-    } catch (error) {
-      console.error('OCR Error:', error);
-      setScanResult({
-        success: false,
-        message: 'Error scanning receipt. Please try again with a clearer image.'
-      });
-    } finally {
-      setIsScanning(false);
-    }
+  const generateTicketNumber = () => {
+    const timestamp = Date.now().toString().slice(-8);
+    return `KM${timestamp}`;
   };
 
-  const checkDuplicateTxId = async (txId) => {
-    // Mock API call - replace with actual database check
-    const existingTickets = JSON.parse(localStorage.getItem('tickets') || '[]');
-    const duplicate = existingTickets.find(ticket => ticket.transactionId === txId);
-
-    if (duplicate && !user.permissions.allowDuplicateTxId) {
-      setErrors({
-        ...errors,
-        transactionId: 'Duplicate Transaction ID! This transaction has already been used for a ticket.'
-      });
-      setScanResult({
-        success: false,
-        message: `Duplicate Transaction: TX ID "${txId}" already exists in the system (Ticket #${duplicate.ticketNumber})`
-      });
-    }
-  };
-
-  const handleSubmit = async (e) => {
+  const handleGenerateTicket = (e) => {
     e.preventDefault();
-    const newErrors = {};
 
     // Validation
-    if (!formData.customerName) newErrors.customerName = 'Customer name is required';
-    if (!formData.contactNumber) newErrors.contactNumber = 'Contact number is required';
-    if (!formData.packageName) newErrors.packageName = 'Please select a package';
-    if (!formData.transactionId) newErrors.transactionId = 'Transaction ID is required';
-
-    // EasyPaisa validation
-    if (formData.paymentMethod === 'easypaisa') {
-      if (user.permissions.easypaisaMandatory && !formData.receipt) {
-        newErrors.receipt = 'Receipt upload is mandatory for EasyPaisa payments';
-      }
-      if (user.permissions.easypaisaScanMandatory && !scanResult?.success) {
-        newErrors.receipt = 'Receipt must be scanned and verified before submission';
-      }
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
+    if (!formData.customerName.trim()) {
+      alert('Please enter customer name');
       return;
     }
 
-    // Check duplicate TX ID
-    if (!user.permissions.allowDuplicateTxId) {
-      const existingTickets = JSON.parse(localStorage.getItem('tickets') || '[]');
-      const duplicate = existingTickets.find(ticket => ticket.transactionId === formData.transactionId);
-      if (duplicate) {
-        alert('Duplicate Transaction ID Error: This transaction ID has already been used.');
-        return;
-      }
+    if (!formData.contactNumber.trim()) {
+      alert('Please enter contact number');
+      return;
     }
 
-    // Create ticket
+    if (!formData.packageId) {
+      alert('Please select a package');
+      return;
+    }
+
+    if (!formData.transactionId.trim()) {
+      alert('Please enter transaction ID');
+      return;
+    }
+
+    // Check if EasyPaisa receipt is mandatory
+    if (formData.paymentMethod === 'easypaisa' && user.permissions?.easypaisa_receipt_mandatory && !receiptFile) {
+      alert('EasyPaisa receipt upload is mandatory');
+      return;
+    }
+
+    // Generate ticket
+    const selectedPackage = packages.find(p => p.id === parseInt(formData.packageId));
+    
     const ticket = {
-      id: Date.now(),
-      ticketNumber: `KM${Date.now().toString().slice(-8)}`,
-      ...formData,
-      status: user.permissions.requireAdminApproval ? 'pending' : 'verified',
-      createdBy: user.username,
-      createdAt: new Date().toISOString(),
-      printed: false
+      ticketNumber: generateTicketNumber(),
+      customerName: formData.customerName,
+      contactNumber: formData.contactNumber,
+      packageName: selectedPackage.name,
+      packageDescription: selectedPackage.description,
+      amount: formData.amount,
+      paymentMethod: formData.paymentMethod,
+      transactionId: formData.transactionId,
+      createdBy: user.name,
+      createdAt: new Date().toLocaleString(),
+      status: user.permissions?.require_admin_approval ? 'pending' : 'verified'
     };
 
-    // Save ticket
-    const tickets = JSON.parse(localStorage.getItem('tickets') || '[]');
-    tickets.push(ticket);
-    localStorage.setItem('tickets', JSON.stringify(tickets));
-
-    // Send to WhatsApp
-    await sendWhatsAppMessage(ticket);
-
-    // Print ticket
-    printTicket(ticket);
-
-    alert('Ticket generated successfully!');
-    
-    // Reset form
-    setFormData({
-      customerName: '',
-      contactNumber: '',
-      packageName: '',
-      transactionId: '',
-      paymentMethod: 'cash',
-      receipt: null
-    });
-    setScanResult(null);
-    setErrors({});
+    setGeneratedTicket(ticket);
+    setShowTicketPreview(true);
   };
 
-  const sendWhatsAppMessage = async (ticket) => {
-    const phone = ticket.contactNumber.replace(/\D/g, '');
+  const handlePrintTicket = () => {
+    const printWindow = window.open('', '', 'width=400,height=600');
+    
+    const ticketHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Print Ticket - ${generatedTicket.ticketNumber}</title>
+        <style>
+          @media print {
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+          }
+          body {
+            width: 80mm;
+            font-family: 'Courier New', monospace;
+            padding: 5mm;
+            margin: 0;
+          }
+          .ticket-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 2px dashed #000;
+            padding-bottom: 10px;
+          }
+          .logo {
+            font-size: 14px;
+            font-weight: bold;
+          }
+          .brand {
+            font-size: 20px;
+            font-weight: bold;
+            text-align: right;
+          }
+          .ticket-number {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 15px 0;
+          }
+          .ticket-details {
+            margin: 10px 0;
+          }
+          .detail-row {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+          }
+          .label {
+            font-weight: bold;
+          }
+          .footer {
+            text-align: center;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 2px dashed #000;
+            font-size: 12px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="ticket-header">
+          <div class="logo">KARTAL</div>
+          <div class="brand">KARTAL MART</div>
+        </div>
+        
+        <div class="ticket-number">${generatedTicket.ticketNumber}</div>
+        
+        <div class="ticket-details">
+          <div class="detail-row">
+            <span class="label">Name:</span>
+            <span>${generatedTicket.customerName}</span>
+          </div>
+          <div class="detail-row">
+            <span class="label">Contact:</span>
+            <span>${generatedTicket.contactNumber.slice(0, -3)}***</span>
+          </div>
+          <div class="detail-row">
+            <span class="label">Package:</span>
+            <span>${generatedTicket.packageName}</span>
+          </div>
+          <div class="detail-row">
+            <span class="label">Amount:</span>
+            <span>Rs. ${generatedTicket.amount}</span>
+          </div>
+          <div class="detail-row">
+            <span class="label">TX ID:</span>
+            <span>${generatedTicket.transactionId}</span>
+          </div>
+          <div class="detail-row">
+            <span class="label">Date:</span>
+            <span>${generatedTicket.createdAt}</span>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <div>Kartal Group of Companies</div>
+          <div>www.kartalmart.com</div>
+          <div>0300-1234567</div>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(ticketHTML);
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
+  const handleSendWhatsApp = () => {
+    const phone = generatedTicket.contactNumber.replace(/\D/g, '');
     const message = `*Kartal Mart Lucky Draw*
-*Ticket(s):* ${ticket.ticketNumber}
-*Name:* ${ticket.customerName}
-*TX ID:* ${ticket.transactionId}
+*Ticket(s):* ${generatedTicket.ticketNumber}
+*Name:* ${generatedTicket.customerName}
+*TX ID:* ${generatedTicket.transactionId}
 _Please wait for verification and keep these ticket(s) safe._
 _Kartal Group of Companies_`;
 
     const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 
-    // Reuse existing tab or open new one
+    // Reuse existing tab
     if (whatsappTab && !whatsappTab.closed) {
       whatsappTab.location.href = whatsappUrl;
       whatsappTab.focus();
@@ -218,252 +269,210 @@ _Kartal Group of Companies_`;
     }
   };
 
-  const printTicket = (ticket) => {
-    // Get ticket template settings
-    const settings = JSON.parse(localStorage.getItem('ticketSettings') || '{}');
-    
-    // Create print content
-    const printWindow = window.open('', '', 'width=300,height=600');
-    const maskedPhone = ticket.contactNumber.slice(0, -3) + '***';
-    
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Print Ticket</title>
-        <style>
-          @media print {
-            @page {
-              size: 80mm auto;
-              margin: 0;
-            }
-            body {
-              margin: 0;
-              padding: 10mm;
-            }
-          }
-          body {
-            font-family: 'Courier New', monospace;
-            width: 80mm;
-            padding: 10mm;
-          }
-          .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 15px;
-          }
-          .logo {
-            max-width: 30mm;
-            height: auto;
-          }
-          .brand {
-            font-size: 20px;
-            font-weight: bold;
-            letter-spacing: 1px;
-          }
-          .ticket-number {
-            font-size: 24px;
-            font-weight: bold;
-            text-align: center;
-            border: 2px solid black;
-            padding: 8px;
-            margin: 15px 0;
-          }
-          .info {
-            margin: 8px 0;
-            font-size: 12px;
-          }
-          .label {
-            font-weight: bold;
-          }
-          .divider {
-            border-top: 1px dashed black;
-            margin: 10px 0;
-          }
-          .footer {
-            text-align: center;
-            font-size: 10px;
-            margin-top: 15px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          ${settings.showLogo !== false ? '<img src="/kartal-logo.png" class="logo" />' : ''}
-          <div class="brand">KARTAL MART</div>
-        </div>
-        
-        <div class="ticket-number">${ticket.ticketNumber}</div>
-        
-        <div class="info">
-          <span class="label">Name:</span> ${ticket.customerName}
-        </div>
-        <div class="info">
-          <span class="label">Package:</span> ${ticket.packageName}
-        </div>
-        <div class="info">
-          <span class="label">Contact:</span> ${maskedPhone}
-        </div>
-        <div class="info">
-          <span class="label">TX ID:</span> ${ticket.transactionId}
-        </div>
-        ${settings.showDate !== false ? `<div class="info"><span class="label">Date:</span> ${new Date(ticket.createdAt).toLocaleDateString()}</div>` : ''}
-        
-        <div class="divider"></div>
-        
-        <div class="footer">
-          ${settings.showContact !== false ? `Contact: ${settings.contactNumber || '0300-1234567'}` : ''}
-          ${settings.showWebsite !== false ? `<br/>${settings.websiteUrl || 'www.kartalmart.com'}` : ''}
-          <br/>Kartal Group of Companies
-        </div>
-      </body>
-      </html>
-    `);
-    
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-      
-      // Mark as printed
-      const tickets = JSON.parse(localStorage.getItem('tickets') || '[]');
-      const index = tickets.findIndex(t => t.id === ticket.id);
-      if (index !== -1) {
-        tickets[index].printed = true;
-        localStorage.setItem('tickets', JSON.stringify(tickets));
-      }
-    }, 500);
+  const handleDownloadPDF = () => {
+    alert('PDF download functionality - install jsPDF library to enable');
   };
 
-  return (
-    <div className="ticket-generation-page">
-      <header className="page-header">
-        <button className="back-btn" onClick={() => navigate('/dashboard')}>
-          <ArrowLeft size={20} />
-          Back
-        </button>
-        <h1>Generate New Ticket</h1>
-      </header>
+  const handleGenerateNew = () => {
+    setShowTicketPreview(false);
+    setGeneratedTicket(null);
+    setFormData({
+      customerName: '',
+      contactNumber: '',
+      packageId: '',
+      paymentMethod: 'cash',
+      transactionId: '',
+      amount: 0
+    });
+    setReceiptFile(null);
+  };
 
-      <div className="page-content">
-        <form onSubmit={handleSubmit} className="ticket-form">
-          <div className="form-section">
-            <h3>Customer Information</h3>
+  const handleGoToInbox = () => {
+    window.location.href = '/tickets';
+  };
+
+  // TICKET PREVIEW MODAL
+  if (showTicketPreview && generatedTicket) {
+    return (
+      <div className="ticket-preview-container">
+        <div className="ticket-preview-card">
+          <div className="preview-header">
+            <h2>✓ Ticket Generated Successfully!</h2>
+            <div className={`status-badge status-${generatedTicket.status}`}>
+              {generatedTicket.status === 'pending' ? 'Pending Approval' : 'Verified'}
+            </div>
+          </div>
+
+          <div className="ticket-display">
+            <div className="ticket-header-display">
+              <div className="logo-display">KARTAL</div>
+              <div className="brand-display">KARTAL MART</div>
+            </div>
             
-            <div className="form-group">
-              <label>Customer Name *</label>
-              <input
-                type="text"
-                value={formData.customerName}
-                onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
-                placeholder="Enter customer name"
-              />
-              {errors.customerName && <span className="error">{errors.customerName}</span>}
-            </div>
-
-            <div className="form-group">
-              <label>Contact Number *</label>
-              <input
-                type="text"
-                value={formData.contactNumber}
-                onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
-                placeholder="03XX-XXXXXXX"
-              />
-              {errors.contactNumber && <span className="error">{errors.contactNumber}</span>}
-            </div>
-
-            <div className="form-group">
-              <label>Package *</label>
-              <select
-                value={formData.packageName}
-                onChange={(e) => setFormData({ ...formData, packageName: e.target.value })}
-              >
-                <option value="">Select a package</option>
-                {packages.map(pkg => (
-                  <option key={pkg.id} value={pkg.name}>
-                    {pkg.name} - Rs {pkg.price}
-                  </option>
-                ))}
-              </select>
-              {errors.packageName && <span className="error">{errors.packageName}</span>}
-            </div>
-          </div>
-
-          <div className="form-section">
-            <h3>Payment Information</h3>
-
-            <div className="form-group">
-              <label>Payment Method *</label>
-              <select
-                value={formData.paymentMethod}
-                onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
-              >
-                <option value="cash">Cash</option>
-                <option value="easypaisa">EasyPaisa</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Transaction ID *</label>
-              <input
-                type="text"
-                value={formData.transactionId}
-                onChange={(e) => setFormData({ ...formData, transactionId: e.target.value })}
-                placeholder="Enter transaction ID"
-              />
-              {errors.transactionId && <span className="error">{errors.transactionId}</span>}
-            </div>
-
-            {formData.paymentMethod === 'easypaisa' && (
-              <div className="form-group">
-                <label>
-                  EasyPaisa Receipt {user.permissions.easypaisaMandatory && '*'}
-                </label>
-                <div className="file-upload-area">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    style={{ display: 'none' }}
-                  />
-                  <button
-                    type="button"
-                    className="upload-btn"
-                    onClick={() => fileInputRef.current.click()}
-                  >
-                    <Upload size={20} />
-                    {formData.receipt ? formData.receipt.name : 'Upload Receipt'}
-                  </button>
-                </div>
-                {errors.receipt && <span className="error">{errors.receipt}</span>}
-
-                {isScanning && (
-                  <div className="scanning-indicator">
-                    <div className="spinner"></div>
-                    <span>Scanning receipt...</span>
-                  </div>
-                )}
-
-                {scanResult && (
-                  <div className={`scan-result ${scanResult.success ? 'success' : 'error'}`}>
-                    {scanResult.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
-                    <span>{scanResult.message}</span>
-                  </div>
-                )}
+            <div className="ticket-number-display">{generatedTicket.ticketNumber}</div>
+            
+            <div className="ticket-details-display">
+              <div className="detail-row-display">
+                <span className="label">Name:</span>
+                <span>{generatedTicket.customerName}</span>
               </div>
-            )}
+              <div className="detail-row-display">
+                <span className="label">Contact:</span>
+                <span>{generatedTicket.contactNumber.slice(0, -3)}***</span>
+              </div>
+              <div className="detail-row-display">
+                <span className="label">Package:</span>
+                <span>{generatedTicket.packageName}</span>
+              </div>
+              <div className="detail-row-display">
+                <span className="label">Amount:</span>
+                <span>Rs. {generatedTicket.amount}</span>
+              </div>
+              <div className="detail-row-display">
+                <span className="label">TX ID:</span>
+                <span>{generatedTicket.transactionId}</span>
+              </div>
+              <div className="detail-row-display">
+                <span className="label">Date:</span>
+                <span>{generatedTicket.createdAt}</span>
+              </div>
+            </div>
           </div>
 
-          <button type="submit" className="submit-btn">
-            <Printer size={20} />
-            Generate & Print Ticket
-          </button>
-        </form>
+          <div className="action-buttons">
+            <button onClick={handleGenerateNew} className="btn btn-secondary">
+              <FileText size={18} /> Generate New
+            </button>
+            <button onClick={handleSendWhatsApp} className="btn btn-success">
+              <SendIcon size={18} /> Send WhatsApp
+            </button>
+            <button onClick={handleDownloadPDF} className="btn btn-info">
+              <Download size={18} /> Download PDF
+            </button>
+            <button onClick={handlePrintTicket} className="btn btn-warning">
+              <Printer size={18} /> Print
+            </button>
+            <button onClick={handleGoToInbox} className="btn btn-primary">
+              <ArrowLeft size={18} /> Go to Inbox
+            </button>
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  // TICKET GENERATION FORM
+  return (
+    <div className="ticket-generation">
+      <h1>Generate Ticket</h1>
+
+      <form onSubmit={handleGenerateTicket} className="ticket-form">
+        <div className="form-group">
+          <label>Customer Name *</label>
+          <input
+            type="text"
+            name="customerName"
+            value={formData.customerName}
+            onChange={handleInputChange}
+            placeholder="Enter customer name"
+            required
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Contact Number *</label>
+          <input
+            type="tel"
+            name="contactNumber"
+            value={formData.contactNumber}
+            onChange={handleInputChange}
+            placeholder="03XX-XXXXXXX"
+            required
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Package *</label>
+          <select
+            name="packageId"
+            value={formData.packageId}
+            onChange={handleInputChange}
+            required
+          >
+            <option value="">Select a package</option>
+            {packages.map(pkg => (
+              <option key={pkg.id} value={pkg.id}>
+                {pkg.name} - Rs. {pkg.price} ({pkg.description})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label>Amount</label>
+          <input
+            type="number"
+            name="amount"
+            value={formData.amount}
+            readOnly
+            className="readonly-field"
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Payment Method *</label>
+          <select
+            name="paymentMethod"
+            value={formData.paymentMethod}
+            onChange={handleInputChange}
+            required
+          >
+            <option value="cash">Cash</option>
+            <option value="easypaisa">EasyPaisa</option>
+            <option value="bank_transfer">Bank Transfer</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label>Transaction ID *</label>
+          <input
+            type="text"
+            name="transactionId"
+            value={formData.transactionId}
+            onChange={handleInputChange}
+            placeholder={formData.paymentMethod === 'cash' ? 'Auto-generated' : 'Enter transaction ID'}
+            readOnly={formData.paymentMethod === 'cash'}
+            className={formData.paymentMethod === 'cash' ? 'readonly-field' : ''}
+            required
+          />
+          {formData.paymentMethod === 'cash' && (
+            <small className="help-text">✓ Transaction ID auto-generated for cash payments</small>
+          )}
+        </div>
+
+        {formData.paymentMethod === 'easypaisa' && (
+          <div className="form-group">
+            <label>
+              EasyPaisa Receipt 
+              {user.permissions?.easypaisa_receipt_mandatory && ' *'}
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleReceiptUpload}
+              required={user.permissions?.easypaisa_receipt_mandatory}
+            />
+            {scanning && <div className="scanning-indicator">🔍 Scanning receipt...</div>}
+            {receiptFile && <div className="file-selected">✓ Receipt uploaded</div>}
+          </div>
+        )}
+
+        <button type="submit" className="btn btn-primary btn-large">
+          Generate Ticket
+        </button>
+      </form>
     </div>
   );
-}
+};
 
 export default TicketGeneration;

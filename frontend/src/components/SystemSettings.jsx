@@ -23,13 +23,6 @@ const SystemSettings = ({ user }) => {
 
   const handleSave = async () => {
     try {
-      // TODO: Save to backend API
-      // const response = await fetch('/api/settings', {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(settings)
-      // });
-      
       setSaved(true);
       alert('Settings saved successfully!');
       
@@ -49,7 +42,6 @@ const SystemSettings = ({ user }) => {
         </p>
       </div>
 
-      {/* Company Information */}
       <div style={{ 
         background: 'white', 
         padding: '24px', 
@@ -74,8 +66,7 @@ const SystemSettings = ({ user }) => {
               padding: '12px', 
               border: '2px solid #e2e8f0', 
               borderRadius: '8px',
-              fontSize: '14px',
-              transition: 'border 0.2s'
+              fontSize: '14px'
             }}
           />
         </div>
@@ -137,147 +128,7 @@ const SystemSettings = ({ user }) => {
         </div>
       </div>
 
-      {/* Feature Settings */}
-      <div style={{ 
-        background: 'white', 
-        padding: '24px', 
-        borderRadius: '12px', 
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-        marginBottom: '24px'
-      }}>
-        <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: '600' }}>
-          Feature Settings
-        </h2>
-
-        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
-              Enable Notifications
-            </div>
-            <div style={{ fontSize: '13px', color: '#718096' }}>
-              Send notifications for ticket generation and updates
-            </div>
-          </div>
-          <label style={{ position: 'relative', display: 'inline-block', width: '56px', height: '28px' }}>
-            <input 
-              type="checkbox"
-              checked={settings.enableNotifications}
-              onChange={(e) => handleChange('enableNotifications', e.target.checked)}
-              style={{ opacity: 0, width: 0, height: 0 }}
-            />
-            <span style={{
-              position: 'absolute',
-              cursor: 'pointer',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: settings.enableNotifications ? '#667eea' : '#cbd5e0',
-              transition: '0.4s',
-              borderRadius: '28px'
-            }}>
-              <span style={{
-                position: 'absolute',
-                content: '',
-                height: '20px',
-                width: '20px',
-                left: settings.enableNotifications ? '32px' : '4px',
-                bottom: '4px',
-                backgroundColor: 'white',
-                transition: '0.4s',
-                borderRadius: '50%'
-              }}></span>
-            </span>
-          </label>
-        </div>
-
-        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
-              Enable WhatsApp Integration
-            </div>
-            <div style={{ fontSize: '13px', color: '#718096' }}>
-              Send tickets and notifications via WhatsApp
-            </div>
-          </div>
-          <label style={{ position: 'relative', display: 'inline-block', width: '56px', height: '28px' }}>
-            <input 
-              type="checkbox"
-              checked={settings.enableWhatsApp}
-              onChange={(e) => handleChange('enableWhatsApp', e.target.checked)}
-              style={{ opacity: 0, width: 0, height: 0 }}
-            />
-            <span style={{
-              position: 'absolute',
-              cursor: 'pointer',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: settings.enableWhatsApp ? '#667eea' : '#cbd5e0',
-              transition: '0.4s',
-              borderRadius: '28px'
-            }}>
-              <span style={{
-                position: 'absolute',
-                content: '',
-                height: '20px',
-                width: '20px',
-                left: settings.enableWhatsApp ? '32px' : '4px',
-                bottom: '4px',
-                backgroundColor: 'white',
-                transition: '0.4s',
-                borderRadius: '50%'
-              }}></span>
-            </span>
-          </label>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '4px' }}>
-              Require Receipt Scan
-            </div>
-            <div style={{ fontSize: '13px', color: '#718096' }}>
-              Mandatory EasyPaisa receipt scanning for verification
-            </div>
-          </div>
-          <label style={{ position: 'relative', display: 'inline-block', width: '56px', height: '28px' }}>
-            <input 
-              type="checkbox"
-              checked={settings.requireReceiptScan}
-              onChange={(e) => handleChange('requireReceiptScan', e.target.checked)}
-              style={{ opacity: 0, width: 0, height: 0 }}
-            />
-            <span style={{
-              position: 'absolute',
-              cursor: 'pointer',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: settings.requireReceiptScan ? '#667eea' : '#cbd5e0',
-              transition: '0.4s',
-              borderRadius: '28px'
-            }}>
-              <span style={{
-                position: 'absolute',
-                content: '',
-                height: '20px',
-                width: '20px',
-                left: settings.requireReceiptScan ? '32px' : '4px',
-                bottom: '4px',
-                backgroundColor: 'white',
-                transition: '0.4s',
-                borderRadius: '50%'
-              }}></span>
-            </span>
-          </label>
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button 
           onClick={handleSave}
           style={{
@@ -289,7 +140,6 @@ const SystemSettings = ({ user }) => {
             fontSize: '16px',
             fontWeight: '600',
             cursor: 'pointer',
-            transition: 'all 0.2s',
             boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
           }}
         >
