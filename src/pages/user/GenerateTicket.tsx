@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Ticket, AlertCircle, CheckCircle } from 'lucide-react';
+import { Ticket, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
 
 export default function GenerateTicket() {
   const { user } = useAuth();
@@ -166,6 +166,9 @@ export default function GenerateTicket() {
   return (
     <div className="max-w-3xl mx-auto space-y-8">
       <div>
+        <button onClick={() => navigate(-1)} className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-2 gap-1">
+          <ArrowLeft className="w-4 h-4"/> Back
+        </button>
         <h1 className="text-2xl font-bold text-gray-900">Generate Tickets</h1>
         <p className="mt-1 text-sm text-gray-500">
           Active Campaign: <span className="font-semibold text-indigo-600">{activeCampaign.name}</span>

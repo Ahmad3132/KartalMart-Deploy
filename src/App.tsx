@@ -23,6 +23,8 @@ import CustomerDetails from './pages/admin/CustomerDetails';
 import Customers from './pages/admin/Customers';
 import CustomerDetail from './pages/admin/CustomerDetail';
 import Users from './pages/admin/Users';
+import Flow2Step1 from './pages/admin/Flow2Step1';
+import Flow2Step2 from './pages/user/Flow2Step2';
 
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { user } = useAuth();
@@ -59,6 +61,8 @@ export default function App() {
             <Route path="tickets/:ticketId" element={<CustomerDetails />} />
             <Route path="users" element={<Users />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="flow2/step1" element={<Flow2Step1 />} />
+            <Route path="flow2/step2" element={<Flow2Step2 />} />
           </Route>
 
           {/* User Routes */}
@@ -70,6 +74,7 @@ export default function App() {
             <Route path="tickets" element={<MyTickets />} />
             <Route path="reports" element={<UserReports />} />
             <Route path="scanner" element={<Scanner />} />
+            <Route path="flow2/step2" element={<Flow2Step2 />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -13,6 +13,15 @@ export function formatPKR(n: number): string {
   return `PKR ${Number(n || 0).toLocaleString('en-PK')}`;
 }
 
+export function formatWANumber(mobile: string): string {
+  if (!mobile) return '';
+  const clean = mobile.replace(/\D/g, '');
+  if (clean.startsWith('92')) return clean;
+  if (clean.startsWith('0')) return '92' + clean.slice(1);
+  if (clean.startsWith('3')) return '92' + clean;
+  return '92' + clean;
+}
+
 export async function handleResponse(res: Response) {
   if (!res.ok) {
     let errorMessage = `Request failed with status ${res.status}`;

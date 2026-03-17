@@ -24,7 +24,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
   <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     <div style="font-size:15px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">KARTAL</div>
     <div style="font-size:7px;letter-spacing:2px;">GROUP OF COMPANIES</div>
-    <div style="font-size:7px;border-top:1px dashed #000;margin-top:1.5mm;padding-top:1.5mm;">*** LUCKY DRAW TICKET ***</div>
+    <div style="font-size:7px;border-top:1px dashed #000;margin-top:1.5mm;padding-top:1.5mm;">*** KARTAL MART ***</div>
   </div>
   <div style="text-align:center;background:#000;color:#fff;padding:2mm;margin-bottom:2mm;">
     <div style="font-size:7px;letter-spacing:2px;">TICKET NUMBER</div>

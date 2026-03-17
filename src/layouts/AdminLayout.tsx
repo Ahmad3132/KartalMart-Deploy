@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Ticket, Settings, Package, CheckCircle, FileText,
   LogOut, Printer, Menu, X, Scan, Users, UserPlus, Clock, BarChart2,
-  DollarSign
+  DollarSign, ClipboardList, ListChecks
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from '../components/Logo';
@@ -22,6 +22,8 @@ const navItems = [
   { name: 'Audit Logs',       path: '/admin/audit',     icon: FileText },
   { name: 'Scanner',          path: '/admin/scanner',   icon: Scan },
   { name: 'Users',            path: '/admin/users',     icon: UserPlus },
+  { name: 'Flow2 - Create',   path: '/admin/flow2/step1', icon: ClipboardList },
+  { name: 'Flow2 - Complete', path: '/admin/flow2/step2', icon: ListChecks },
   { name: 'Settings',         path: '/admin/settings',  icon: Settings },
 ];
 

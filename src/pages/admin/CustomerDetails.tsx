@@ -4,6 +4,7 @@ import { ArrowLeft, User, Phone, MapPin, Ticket, CreditCard, Calendar, Shield, P
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { TicketCard } from '../../components/TicketCard';
+import { formatWANumber } from '../../utils/api';
 
 export default function CustomerDetails() {
   const { ticketId } = useParams();
@@ -61,17 +62,7 @@ export default function CustomerDetails() {
   const handleWhatsApp = async () => {
     const message = `*Kartal Group Ticket*\n\n*Ticket ID:* ${ticket.ticket_id}\n*Customer:* ${ticket.name}\n*Transaction ID:* ${ticket.tx_id}\n*Date:* ${new Date(ticket.date).toLocaleString()}\n\n_Please keep this ticket safe for verification._`;
     
-    // Ensure mobile number is in correct format (remove any non-digits)
-    const cleanMobile = ticket.mobile.replace(/\D/g, '');
-    // Add country code if missing (assuming Pakistan +92 if it starts with 0 or 3)
-    let formattedMobile = cleanMobile;
-    if (formattedMobile.startsWith('0')) {
-      formattedMobile = '92' + formattedMobile.substring(1);
-    } else if (formattedMobile.startsWith('3')) {
-      formattedMobile = '92' + formattedMobile;
-    }
-    
-    const url = `https://wa.me/${formattedMobile}?text=${encodeURIComponent(message)}`;
+    const url = `https://wa.me/${formatWANumber(ticket.mobile)}?text=${encodeURIComponent(message)}`;
     window.open(url, 'whatsapp');
   };
 

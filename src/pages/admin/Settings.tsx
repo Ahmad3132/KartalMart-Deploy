@@ -199,6 +199,13 @@ export default function Settings() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
         {/* ── PROFILE ── */}
+        {tab==='profile' && !me && (
+          <div className="p-6 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"/>
+            <p className="text-sm text-gray-500">Loading profile...</p>
+            <button onClick={load} className="mt-3 text-xs text-indigo-600 hover:underline">Retry</button>
+          </div>
+        )}
         {tab==='profile' && me && (
           <div className="p-6 max-w-xl">
             <form onSubmit={saveProfile} className="space-y-5">
@@ -296,13 +303,56 @@ export default function Settings() {
             )}
 
             {subTab==='global' && (
-              <div className="p-5 space-y-4">
-                <h3 className="text-base font-bold text-gray-900">Global Settings</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Toggle k="require_all_approvals" label="Require Admin Approval" desc="Force all transactions to be approved before tickets generate." icon={CheckCircle}/>
-                  <Toggle k="multi_person_enabled"  label="Global Multi-Person Logic" desc="Allow multiple participants per transaction." icon={Users}/>
-                  <Toggle k="duplicate_tx_enabled"  label="Allow Duplicate TX IDs" desc="Users can reuse the same transaction ID." icon={Activity}/>
-                  <Toggle k="whatsapp_enabled"       label="WhatsApp Sharing" desc="Enable WhatsApp ticket sharing buttons." icon={MessageSquare}/>
+              <div className="p-5 space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 mb-3">Global Settings</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Toggle k="require_all_approvals" label="Require Admin Approval" desc="Force all transactions to be approved before tickets generate." icon={CheckCircle}/>
+                    <Toggle k="multi_person_enabled"  label="Global Multi-Person Logic" desc="Allow multiple participants per transaction." icon={Users}/>
+                    <Toggle k="duplicate_tx_enabled"  label="Allow Duplicate TX IDs" desc="Users can reuse the same transaction ID." icon={Activity}/>
+                    <Toggle k="whatsapp_enabled"       label="WhatsApp Sharing" desc="Enable WhatsApp ticket sharing buttons." icon={MessageSquare}/>
+                    <Toggle k="allow_multiple_active_campaigns" label="Multiple Active Campaigns" desc="Allow more than one campaign to be active simultaneously." icon={Activity}/>
+                  </div>
+                </div>
+                <div className="border-t border-gray-100 pt-5">
+                  <h3 className="text-base font-bold text-gray-900 mb-3">Ticket Template Settings</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                    <Toggle k="pdf_watermark_enabled" label="PDF Watermark" desc="Add date/time watermark on ticket PDFs to prevent fraud." icon={Shield}/>
+                    <Toggle k="pdf_qr_verification_enabled" label="QR Verification" desc="Generate verifiable QR codes on tickets." icon={Globe}/>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="field-label">Color Mode</label>
+                      <select value={settings.pdf_color_mode||'color'} onChange={async(e)=>{
+                        await fetch('/api/settings',{method:'PUT',headers:hj(),body:JSON.stringify({key:'pdf_color_mode',value:e.target.value})});
+                        setSettings((s:any)=>({...s,pdf_color_mode:e.target.value}));
+                      }} className="field">
+                        <option value="color">Full Color</option>
+                        <option value="bw">Black & White</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="field-label">Company Phone</label>
+                      <input defaultValue={settings.company_phone||''} onBlur={async(e)=>{
+                        await fetch('/api/settings',{method:'PUT',headers:hj(),body:JSON.stringify({key:'company_phone',value:e.target.value})});
+                        setSettings((s:any)=>({...s,company_phone:e.target.value}));
+                      }} className="field" placeholder="+92-XXX-XXXXXXX"/>
+                    </div>
+                    <div>
+                      <label className="field-label">Company Email</label>
+                      <input defaultValue={settings.company_email||''} onBlur={async(e)=>{
+                        await fetch('/api/settings',{method:'PUT',headers:hj(),body:JSON.stringify({key:'company_email',value:e.target.value})});
+                        setSettings((s:any)=>({...s,company_email:e.target.value}));
+                      }} className="field" placeholder="info@kartal.com.pk"/>
+                    </div>
+                    <div>
+                      <label className="field-label">Company Website</label>
+                      <input defaultValue={settings.company_website||''} onBlur={async(e)=>{
+                        await fetch('/api/settings',{method:'PUT',headers:hj(),body:JSON.stringify({key:'company_website',value:e.target.value})});
+                        setSettings((s:any)=>({...s,company_website:e.target.value}));
+                      }} className="field" placeholder="kartal.com.pk"/>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

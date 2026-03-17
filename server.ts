@@ -183,6 +183,19 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS cash_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_user TEXT NOT NULL,
+    to_user TEXT NOT NULL,
+    amount REAL NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'Pending',
+    approved_by TEXT,
+    approved_at DATETIME,
+    rejection_reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS account_transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,
@@ -233,6 +246,12 @@ const migrations = [
   { table: 'tickets', column: 'last_printed_by_nick', type: 'TEXT' },
   { table: 'tickets', column: 'created_by_user_id', type: 'TEXT' },
   { table: 'tickets', column: 'created_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
+  { table: 'account_transactions', column: 'user_email', type: 'TEXT' },
+  { table: 'users', column: 'pdf_download_enabled', type: 'INTEGER DEFAULT 1' },
+  { table: 'transactions', column: 'workflow_step', type: 'INTEGER DEFAULT 0' },
+  { table: 'transactions', column: 'step1_user', type: 'TEXT' },
+  { table: 'transactions', column: 'step2_user', type: 'TEXT' },
+  { table: 'transactions', column: 'step1_completed_at', type: 'DATETIME' },
 ];
 
 for (const m of migrations) {
@@ -327,6 +346,15 @@ if (seedSettings.count === 0) {
   db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('sms_enabled', 'false');
   db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('multi_person_enabled', 'true');
 }
+// Always seed new settings keys
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('pdf_watermark_enabled', 'true');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('pdf_color_mode', 'color');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('company_phone', '');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('company_email', '');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('company_website', '');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('pdf_qr_verification_enabled', 'true');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('allow_multiple_active_campaigns', 'false');
+db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('workflow_type', 'flow1');
 
 async function startServer() {
   console.log('Initializing startServer...');
@@ -890,15 +918,16 @@ async function startServer() {
         // Auto-create account transaction (Cash In from ticket sale)
         try {
           db.prepare(`
-            INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id)
-            VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?)
+            INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id, user_email)
+            VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?, ?)
           `).run(
             tx.amount,
             tx.payment_type || 'Online',
-            `Ticket sale approved — TX: ${tx.tx_id} | ${tx.is_multi_person ? 'Multi-person' : (tx.name || 'Customer')}`,
+            `KARTAL MART ticket sale — TX: ${tx.tx_id} | ${tx.is_multi_person ? 'Multi-person' : (tx.name || 'Customer')}`,
             tx.user_email,
             currentUser.email,
-            tx.tx_id
+            tx.tx_id,
+            tx.user_email
           );
         } catch (accErr) {
           console.error('Account TX creation failed (non-critical):', accErr);
@@ -1475,12 +1504,113 @@ async function startServer() {
     }
   });
 
-  // API 404 handler - MUST be before Vite/SPA fallback
-  app.all('/api/*', (req, res) => {
-    res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
+  // ════════════════════════════════════════════
+  // DUAL WORKFLOW (Flow 2) ENDPOINTS
+  // ════════════════════════════════════════════
+
+  // Flow 2 Step 1: Admin/authorized user creates entry
+  app.post('/api/transactions/flow2/step1', authenticateToken, upload.single('receipt'), (req: any, res: any) => {
+    try {
+      const u = req.user;
+      if (u.role !== 'Admin') return res.status(403).json({ error: 'Only Admin can create Flow 2 entries' });
+      const { name, mobile, address, package_id, payment_type, tx_id, receipt_url, campaign_id } = req.body;
+      if (!name || !mobile || !package_id) return res.status(400).json({ error: 'Name, mobile, and package are required' });
+
+      const pkg = db.prepare('SELECT * FROM packages WHERE id=?').get(package_id) as any;
+      if (!pkg) return res.status(400).json({ error: 'Package not found' });
+
+      const campId = campaign_id || (db.prepare("SELECT id FROM campaigns WHERE status='Active' LIMIT 1").get() as any)?.id;
+      if (!campId) return res.status(400).json({ error: 'No active campaign' });
+
+      // Auto-generate cash TX ID if cash payment and no ID provided
+      let finalTxId = tx_id;
+      if (payment_type === 'CASH' && !finalTxId) {
+        const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        const seq = ((db.prepare("SELECT COUNT(*) as c FROM transactions WHERE cash_reference_id LIKE ?").get(`CASH-${today}%`) as any)?.c || 0) + 1;
+        finalTxId = `CASH-${today}-${String(seq).padStart(4, '0')}`;
+      }
+      if (!finalTxId) finalTxId = `TX-${Date.now()}`;
+
+      const receiptFilename = req.file ? req.file.filename : null;
+
+      const r = db.prepare(`
+        INSERT INTO transactions (tx_id, user_email, campaign_id, package_id, amount, ticket_count, status, payment_type, cash_reference_id, receipt_url, receipt_filename, name, mobile, address, workflow_step, step1_user, step1_completed_at, created_by_user_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'Flow2-Pending', ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), ?)
+      `).run(
+        finalTxId, u.email, campId, pkg.id, pkg.amount, pkg.ticket_count,
+        payment_type || 'CASH', payment_type === 'CASH' ? finalTxId : null,
+        receipt_url || null, receiptFilename, name, mobile, address || '',
+        u.email, u.email
+      );
+
+      db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run(
+        'Flow2 Step1', `Created entry TX: ${finalTxId} for ${name}`, u.email
+      );
+
+      res.json({ id: r.lastInsertRowid, tx_id: finalTxId, status: 'Flow2-Pending' });
+    } catch (e: any) {
+      console.error('Flow2 Step1 error:', e);
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // Global error handler
+  // Flow 2: Get pending step 2 entries
+  app.get('/api/transactions/flow2/pending-step2', authenticateToken, (req: any, res: any) => {
+    try {
+      const rows = db.prepare("SELECT id, tx_id, package_id, amount, ticket_count, payment_type, workflow_step, step1_user, step1_completed_at, date FROM transactions WHERE status='Flow2-Pending' AND workflow_step=1 ORDER BY date DESC").all();
+      res.json(rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Flow 2 Step 2: Operator completes (no access to payment/contact)
+  app.put('/api/transactions/flow2/:id/step2', authenticateToken, (req: any, res: any) => {
+    try {
+      const u = req.user;
+      const tx = db.prepare('SELECT * FROM transactions WHERE id=?').get(req.params.id) as any;
+      if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+      if (tx.status !== 'Flow2-Pending') return res.status(400).json({ error: 'Not in Flow2-Pending state' });
+
+      // Generate tickets
+      const generationId = `GEN-${Date.now()}`;
+      const nick = (db.prepare('SELECT nick_name FROM users WHERE email=?').get(u.email) as any)?.nick_name || u.email;
+
+      db.transaction(() => {
+        db.prepare("UPDATE transactions SET status='Generated', workflow_step=2, step2_user=? WHERE id=?").run(u.email, tx.id);
+
+        // Generate tickets
+        const campaign = db.prepare('SELECT * FROM campaigns WHERE id=?').get(tx.campaign_id) as any;
+        if (campaign) {
+          for (let i = 0; i < tx.ticket_count; i++) {
+            const counter = ((db.prepare('SELECT counter FROM campaigns WHERE id=?').get(tx.campaign_id) as any)?.counter || 0) + 1;
+            db.prepare('UPDATE campaigns SET counter=? WHERE id=?').run(counter, tx.campaign_id);
+            const ticketId = `${campaign.name.substring(0, 3).toUpperCase()}-${String(counter).padStart(6, '0')}`;
+            db.prepare(`
+              INSERT INTO tickets (ticket_id, generation_id, campaign_id, user_email, generated_by, generated_by_nick, tx_id, name, mobile, address, total_tickets_in_tx, person_ticket_index, created_by_user_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(ticketId, generationId, tx.campaign_id, tx.user_email, u.email, nick, tx.tx_id, tx.name, tx.mobile, tx.address || '', tx.ticket_count, i + 1, u.email);
+          }
+        }
+
+        // Auto-create account transaction
+        try {
+          db.prepare(`
+            INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id, user_email)
+            VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?, ?)
+          `).run(tx.amount, tx.payment_type || 'Cash', `KARTAL MART ticket sale — TX: ${tx.tx_id} | ${tx.name}`, tx.user_email, u.email, tx.tx_id, tx.user_email);
+        } catch (accErr) { console.error('Flow2 account TX error:', accErr); }
+
+        db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run(
+          'Flow2 Step2', `Completed entry TX: ${tx.tx_id}, tickets generated`, u.email
+        );
+      })();
+
+      res.json({ success: true, tx_id: tx.tx_id });
+    } catch (e: any) {
+      console.error('Flow2 Step2 error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ════════════════════════════════════════════
   // ACCOUNTS MODULE
   // ════════════════════════════════════════════
@@ -1496,8 +1626,12 @@ async function startServer() {
     if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admins only' });
     const { name, type, subcategories = [] } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'name and type required' });
-    const r = db.prepare('INSERT INTO account_categories (name, type, subcategories) VALUES (?, ?, ?)').run(name, type, JSON.stringify(subcategories));
-    res.json({ id: r.lastInsertRowid });
+    try {
+      const r = db.prepare('INSERT INTO account_categories (name, type, subcategories) VALUES (?, ?, ?)').run(name, type, JSON.stringify(subcategories));
+      res.json({ id: r.lastInsertRowid });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Failed to create category' });
+    }
   });
 
   // PUT category
@@ -1538,9 +1672,9 @@ async function startServer() {
     const status = u.role === 'Admin' ? 'Approved' : 'Pending';
     const approved_by = u.role === 'Admin' ? u.email : null;
     const r = db.prepare(`
-      INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, tx_reference)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Manual', ?, ?)`
-    ).run(type, amount, category, subcategory||null, description, date, u.email, status, approved_by, tx_reference||null);
+      INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, tx_reference, user_email)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Manual', ?, ?, ?)`
+    ).run(type, amount, category, subcategory||null, description, date, u.email, status, approved_by, tx_reference||null, u.email);
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
       'Account Transaction', `${type} PKR ${amount} [${category}] - ${description}`, u.email
     );
@@ -1587,20 +1721,115 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Auto-create account transaction when a ticket transaction is approved
-  // This is called internally — hooked into the existing approve endpoint
-  function createSystemAccountTx(txData: any, agentEmail: string) {
+  // ════════════════════════════════════════════
+  // CASH IN HAND & TRANSFERS
+  // ════════════════════════════════════════════
+
+  // GET cash-in-hand per user
+  app.get('/api/accounts/cash-in-hand', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') return res.status(403).json({ error: 'No permission' });
     try {
-      db.prepare(`
-        INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id)
-        VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, CURRENT_DATE, ?, 'Approved', 'System', ?, CURRENT_TIMESTAMP, ?)`
-      ).run(txData.amount, txData.payment_type, `Lucky Draw ticket sale — TX: ${txData.tx_id} | Customer: ${txData.name||'Multi'}`, agentEmail, agentEmail, txData.tx_id);
-    } catch(e) { console.error('Failed to create system account TX:', e); }
-  }
+      const users = db.prepare("SELECT email, name, nick_name, role FROM users WHERE status='Active'").all() as any[];
+      const result = users.map((u: any) => {
+        // Cash In attributed to this user (approved only)
+        const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash In' AND status='Approved'").get(u.email) as any)?.total || 0;
+        // Cash Out attributed to this user (approved only)
+        const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash Out' AND status='Approved'").get(u.email) as any)?.total || 0;
+        // Transfers out (approved)
+        const transfersOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Approved'").get(u.email) as any)?.total || 0;
+        // Transfers in (approved)
+        const transfersIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE to_user=? AND status='Approved'").get(u.email) as any)?.total || 0;
+        // Pending transfers out
+        const pendingOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Pending'").get(u.email) as any)?.total || 0;
+        return {
+          email: u.email, name: u.name, nick_name: u.nick_name, role: u.role,
+          cash_in: cashIn, cash_out: cashOut,
+          transfers_out: transfersOut, transfers_in: transfersIn,
+          pending_transfers: pendingOut,
+          balance: cashIn - cashOut - transfersOut + transfersIn
+        };
+      }).filter((u: any) => u.cash_in > 0 || u.cash_out > 0 || u.transfers_out > 0 || u.transfers_in > 0 || u.balance !== 0);
+      res.json(result);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
 
-  // Re-export for use in approve endpoint
-  (app as any)._createSystemAccountTx = createSystemAccountTx;
+  // GET transfers
+  app.get('/api/accounts/transfers', authenticateToken, (req: any, res: any) => {
+    const u = req.user;
+    let rows: any[];
+    if (u.role === 'Admin' || u.role === 'Accountant') {
+      rows = db.prepare('SELECT * FROM cash_transfers ORDER BY created_at DESC').all() as any[];
+    } else {
+      rows = db.prepare('SELECT * FROM cash_transfers WHERE from_user=? OR to_user=? ORDER BY created_at DESC').all(u.email, u.email) as any[];
+    }
+    res.json(rows);
+  });
 
+  // POST transfer
+  app.post('/api/accounts/transfers', authenticateToken, (req: any, res: any) => {
+    const u = req.user;
+    const { to_user, amount, description } = req.body;
+    if (!to_user || !amount || amount <= 0) return res.status(400).json({ error: 'to_user and positive amount required' });
+    const from_user = u.email;
+    if (from_user === to_user) return res.status(400).json({ error: 'Cannot transfer to yourself' });
+    // Admin transfers auto-approve
+    const status = u.role === 'Admin' ? 'Approved' : 'Pending';
+    const approved_by = u.role === 'Admin' ? u.email : null;
+    const approved_at = u.role === 'Admin' ? new Date().toISOString() : null;
+    const r = db.prepare(`INSERT INTO cash_transfers (from_user, to_user, amount, description, status, approved_by, approved_at) VALUES (?,?,?,?,?,?,?)`)
+      .run(from_user, to_user, amount, description || null, status, approved_by, approved_at);
+    // If auto-approved, create linked account transactions
+    if (status === 'Approved') {
+      db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, user_email) VALUES ('Cash Out',?,'Cash Transfer','Transfer Out',?,date('now'),?,'Approved','System',?,datetime('now'),?)`)
+        .run(amount, `Cash transfer to ${to_user}`, from_user, u.email, from_user);
+      db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, user_email) VALUES ('Cash In',?,'Cash Transfer','Transfer In',?,date('now'),?,'Approved','System',?,datetime('now'),?)`)
+        .run(amount, `Cash transfer from ${from_user}`, from_user, u.email, to_user);
+    }
+    db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Cash Transfer', `PKR ${amount} from ${from_user} to ${to_user} [${status}]`, u.email);
+    res.json({ id: r.lastInsertRowid, status });
+  });
+
+  // APPROVE transfer
+  app.put('/api/accounts/transfers/:id/approve', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admins only' });
+    const transfer = db.prepare('SELECT * FROM cash_transfers WHERE id=?').get(req.params.id) as any;
+    if (!transfer) return res.status(404).json({ error: 'Not found' });
+    if (transfer.status !== 'Pending') return res.status(400).json({ error: 'Already processed' });
+    db.transaction(() => {
+      db.prepare("UPDATE cash_transfers SET status='Approved', approved_by=?, approved_at=datetime('now') WHERE id=?").run(req.user.email, req.params.id);
+      db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, user_email) VALUES ('Cash Out',?,'Cash Transfer','Transfer Out',?,date('now'),?,'Approved','System',?,datetime('now'),?)`)
+        .run(transfer.amount, `Cash transfer to ${transfer.to_user}`, transfer.from_user, req.user.email, transfer.from_user);
+      db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, user_email) VALUES ('Cash In',?,'Cash Transfer','Transfer In',?,date('now'),?,'Approved','System',?,datetime('now'),?)`)
+        .run(transfer.amount, `Cash transfer from ${transfer.from_user}`, transfer.from_user, req.user.email, transfer.to_user);
+    })();
+    db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Approve Transfer', `Transfer ${req.params.id} approved`, req.user.email);
+    res.json({ success: true });
+  });
+
+  // REJECT transfer
+  app.put('/api/accounts/transfers/:id/reject', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admins only' });
+    const { reason } = req.body;
+    db.prepare("UPDATE cash_transfers SET status='Rejected', rejection_reason=? WHERE id=?").run(reason || null, req.params.id);
+    db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Reject Transfer', `Transfer ${req.params.id} rejected: ${reason}`, req.user.email);
+    res.json({ success: true });
+  });
+
+  // ════════════════════════════════════════════
+  // PUBLIC TICKET VERIFICATION
+  // ════════════════════════════════════════════
+  app.get('/api/tickets/verify/:ticketId', (req, res) => {
+    const ticket = db.prepare('SELECT ticket_id, name, mobile, tx_id, date, generated_by_nick FROM tickets WHERE ticket_id = ?').get(req.params.ticketId) as any;
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found', valid: false });
+    res.json({ valid: true, ticket: { ...ticket, mobile: ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : '' } });
+  });
+
+  // API 404 handler - MUST be after all API routes but before Vite/SPA fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
+  });
+
+  // Global error handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error('Server error:', err);
     res.status(err.status || 500).json({ 

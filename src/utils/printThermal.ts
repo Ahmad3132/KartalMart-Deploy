@@ -94,7 +94,7 @@ export function buildThermalHTML(ticket: any, showFullMobile = false, logoDataUr
     <div style="font-size:16px;font-weight:900;letter-spacing:3px;font-family:serif;">KARTAL</div>
     <div style="font-size:8px;letter-spacing:2px;margin-top:1px;">GROUP OF COMPANIES</div>
     <div style="font-size:8px;margin-top:2mm;letter-spacing:1px;border-top:1px dashed #000;padding-top:2mm;">
-      *** LUCKY DRAW TICKET ***
+      *** KARTAL MART ***
     </div>
   </div>
 

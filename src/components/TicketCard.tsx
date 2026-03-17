@@ -33,7 +33,7 @@ export const TicketCard = React.forwardRef<HTMLDivElement, TicketCardProps>(
             </div>
           </div>
           <div className="text-right">
-            <p className="text-[#A48655] text-[10px] uppercase tracking-wider font-bold">Lucky Draw Ticket</p>
+            <p className="text-[#A48655] text-[10px] uppercase tracking-wider font-bold">KARTAL MART</p>
             <p className="text-white font-mono font-black text-lg">{ticket.ticket_id}</p>
           </div>
         </div>

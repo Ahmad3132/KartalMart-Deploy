@@ -5,6 +5,7 @@ import { Printer, Send, PlusCircle, AlertCircle, FileDown, MessageSquare, CheckC
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { ThermalTicket } from '../../components/ThermalTicket';
+import { formatWANumber } from '../../utils/api';
 
 // Convert image URL to base64 for use in print window
 async function imageToBase64(url: string): Promise<string> {
@@ -21,15 +22,6 @@ async function imageToBase64(url: string): Promise<string> {
     img.onerror = () => resolve('');
     img.src = url;
   });
-}
-
-// Format Pakistani mobile number for WhatsApp
-function formatWANumber(mobile: string): string {
-  const clean = mobile.replace(/\D/g, '');
-  if (clean.startsWith('92')) return clean;
-  if (clean.startsWith('0')) return '92' + clean.slice(1);
-  if (clean.startsWith('3')) return '92' + clean;
-  return clean;
 }
 
 // Open thermal print window for one or many tickets
@@ -67,7 +59,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
     ${logoTag}
     <div style="font-size:15px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">KARTAL</div>
     <div style="font-size:7.5px;letter-spacing:2px;">GROUP OF COMPANIES</div>
-    <div style="font-size:7.5px;margin-top:1.5mm;border-top:1px dashed #000;padding-top:1.5mm;letter-spacing:1px;">*** LUCKY DRAW TICKET ***</div>
+    <div style="font-size:7.5px;margin-top:1.5mm;border-top:1px dashed #000;padding-top:1.5mm;letter-spacing:1px;">*** KARTAL MART ***</div>
   </div>
 
   <div style="text-align:center;background:#000;color:#fff;padding:2mm;margin-bottom:2mm;">
@@ -131,8 +123,8 @@ window.onload = function() {
   win.document.close();
 }
 
-// Generate thermal PDF (80mm width)
-async function generateThermalPDF(tickets: any[], thermalRefs: { [key: string]: HTMLDivElement | null }) {
+// Generate thermal PDF (80mm width) with optional watermark
+async function generateThermalPDF(tickets: any[], thermalRefs: { [key: string]: HTMLDivElement | null }, watermarkEnabled = false) {
   // 80mm = 226.77pt in jsPDF
   const pdf = new jsPDF({ unit: 'mm', format: [80, 297], orientation: 'portrait' });
   let currentY = 3;
@@ -163,6 +155,23 @@ async function generateThermalPDF(tickets: any[], thermalRefs: { [key: string]: 
     pdf.internal.pageSize.height = imgH + currentY + 3;
 
     pdf.addImage(imgData, 'PNG', 3, currentY, imgW, imgH);
+
+    // Add watermark if enabled
+    if (watermarkEnabled) {
+      const now = new Date();
+      const watermarkText = now.toLocaleString('en-PK', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      pdf.setFontSize(8);
+      pdf.setTextColor(200, 200, 200);
+      // Save current state
+      const pageHeight = pdf.internal.pageSize.height;
+      // Diagonal watermark
+      const centerX = pageW / 2;
+      const centerY = (currentY + imgH) / 2;
+      pdf.text(watermarkText, centerX, centerY, { angle: 45, align: 'center' });
+      // Reset text color
+      pdf.setTextColor(0, 0, 0);
+    }
+
     currentY += imgH + 3;
   }
 
@@ -180,15 +189,19 @@ export default function GeneratedTicketsView() {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [loadingPDF, setLoadingPDF] = useState<string | null>(null);
   const thermalRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const [appSettings, setAppSettings] = useState<any>({});
 
   const isAdmin = user?.role === 'Admin';
 
   useEffect(() => {
     const headers = { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` };
-    fetch(`/api/tickets?limit=1000`, { headers })
-      .then(r => r.json())
-      .then(d => setTickets((d.tickets || []).filter((t: any) => t.tx_id === txId)))
-      .catch(() => setTickets([]));
+    Promise.all([
+      fetch(`/api/tickets?limit=1000`, { headers }).then(r => r.json()).catch(()=>({tickets:[]})),
+      fetch('/api/settings', { headers }).then(r => r.json()).catch(()=>({})),
+    ]).then(([d, s]) => {
+      setTickets((d.tickets || []).filter((t: any) => t.tx_id === txId));
+      setAppSettings(s?.error ? {} : s);
+    });
   }, [txId]);
 
   const showMsg = (type: 'success' | 'error' | 'info', text: string) => {
@@ -238,7 +251,7 @@ export default function GeneratedTicketsView() {
     // Opens WhatsApp directly with the customer's number pre-filled
     const waNum = formatWANumber(ticket.mobile);
     const msg =
-`🎟 *Kartal Group Lucky Draw*
+`🎟 *KARTAL MART*
 
 *Ticket No:* ${ticket.ticket_id}
 *Name:* ${ticket.name}
@@ -269,7 +282,7 @@ _Kartal Group of Companies_`;
       const theirTickets = tickets.filter(x => x.mobile === t.mobile);
       const ids = theirTickets.map(x => x.ticket_id).join(', ');
       const msg =
-`🎟 *Kartal Group Lucky Draw*
+`🎟 *KARTAL MART*
 
 *Ticket(s):* ${ids}
 *Name:* ${t.name}
@@ -291,7 +304,7 @@ _Kartal Group of Companies_`;
     setLoadingPDF(key);
     try {
       const list = ticketId ? tickets.filter(t => t.id === ticketId) : tickets;
-      const pdf = await generateThermalPDF(list, thermalRefs.current);
+      const pdf = await generateThermalPDF(list, thermalRefs.current, appSettings.pdf_watermark_enabled === 'true');
       const fname = ticketId ? `Ticket-${list[0].ticket_id}.pdf` : `Tickets-${txId}.pdf`;
       pdf.save(fname);
       showMsg('success', 'PDF downloaded!');
@@ -308,7 +321,7 @@ _Kartal Group of Companies_`;
   const handleSendPDF = async (ticket: any) => {
     setLoadingPDF(`send-${ticket.id}`);
     try {
-      const pdf = await generateThermalPDF([ticket], thermalRefs.current);
+      const pdf = await generateThermalPDF([ticket], thermalRefs.current, appSettings.pdf_watermark_enabled === 'true');
       const fname = `Ticket-${ticket.ticket_id}.pdf`;
       const blob = pdf.output('blob');
       const file = new File([blob], fname, { type: 'application/pdf' });

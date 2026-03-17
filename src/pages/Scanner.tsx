@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { Search, Ticket, User, Phone, MapPin, Calendar, CheckCircle, XCircle } from 'lucide-react';
+import { formatWANumber } from '../utils/api';
 
 export default function Scanner() {
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -51,15 +52,7 @@ export default function Scanner() {
       setWhatsappRedirect(data.whatsapp_redirect_enabled);
 
       if (data.whatsapp_redirect_enabled && data.ticket.mobile) {
-        // Ensure mobile number is in correct format (remove any non-digits)
-        const cleanMobile = data.ticket.mobile.replace(/\D/g, '');
-        // Add country code if missing (assuming Pakistan +92 if it starts with 0 or 3)
-        let formattedMobile = cleanMobile;
-        if (formattedMobile.startsWith('0')) {
-          formattedMobile = '92' + formattedMobile.substring(1);
-        } else if (formattedMobile.startsWith('3')) {
-          formattedMobile = '92' + formattedMobile;
-        }
+        const formattedMobile = formatWANumber(data.ticket.mobile);
 
         const message = `Assalam-o-Alaikum! Your ticket ${data.ticket.ticket_id} has been verified and put into the box. Here is the video proof.`;
         const url = `https://wa.me/${formattedMobile}?text=${encodeURIComponent(message)}`;

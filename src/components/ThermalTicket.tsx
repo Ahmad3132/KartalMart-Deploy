@@ -54,7 +54,7 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
             GROUP OF COMPANIES
           </div>
           <div style={{ fontSize: '8px', marginTop: '2mm', letterSpacing: '1px', borderTop: '1px dashed #000', paddingTop: '2mm' }}>
-            *** LUCKY DRAW TICKET ***
+            *** KARTAL MART ***
           </div>
         </div>
 

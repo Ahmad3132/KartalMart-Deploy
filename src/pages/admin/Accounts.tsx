@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X, Check, AlertCircle, TrendingUp, TrendingDown, DollarSign,
-  Filter, Download, Edit2, Trash2, Clock, ChevronDown, BarChart2, Search } from 'lucide-react';
+  Filter, Download, Edit2, Trash2, Clock, ChevronDown, BarChart2, Search, Users, ArrowLeftRight, Send } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const h  = () => ({ 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` });
@@ -19,7 +19,7 @@ export default function Accounts() {
   const isAdmin = role === 'Admin';
   const isAccountant = role === 'Accountant' || isAdmin;
 
-  const [tab, setTab]               = useState<'dashboard'|'transactions'|'categories'|'reports'>('dashboard');
+  const [tab, setTab]               = useState<'dashboard'|'transactions'|'categories'|'reports'|'cash-in-hand'|'transfers'>('dashboard');
   const [txList, setTxList]         = useState<Tx[]>([]);
   const [cats, setCats]             = useState<Cat[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -43,6 +43,12 @@ export default function Accounts() {
   const [editTx, setEditTx]         = useState<Tx|null>(null);
   const [editCat, setEditCat]       = useState<Cat|null>(null);
 
+  // Cash in hand & transfers
+  const [cashInHand, setCashInHand] = useState<any[]>([]);
+  const [transfers, setTransfers]   = useState<any[]>([]);
+  const [transferModal, setTransferModal] = useState(false);
+  const [usersList, setUsersList]   = useState<any[]>([]);
+
   // Add form
   const [txType, setTxType]         = useState<'Cash In'|'Cash Out'>('Cash In');
   const [selCat, setSelCat]         = useState('');
@@ -51,14 +57,23 @@ export default function Accounts() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [tRes, cRes] = await Promise.all([
+      const [tRes, cRes, cihRes, trRes, uRes] = await Promise.all([
         fetch('/api/accounts/transactions', { headers: h() }),
         fetch('/api/accounts/categories',   { headers: h() }),
+        fetch('/api/accounts/cash-in-hand', { headers: h() }).catch(()=>({json:async()=>[]})),
+        fetch('/api/accounts/transfers',    { headers: h() }).catch(()=>({json:async()=>[]})),
+        fetch('/api/users',                 { headers: h() }).catch(()=>({json:async()=>[]})),
       ]);
       const tData = await tRes.json().catch(()=>[]);
       const cData = await cRes.json().catch(()=>[]);
+      const cihData = await cihRes.json().catch(()=>[]);
+      const trData = await trRes.json().catch(()=>[]);
+      const uData = await uRes.json().catch(()=>[]);
       setTxList(Array.isArray(tData) ? tData : []);
       setCats(Array.isArray(cData) ? cData : []);
+      setCashInHand(Array.isArray(cihData) ? cihData : []);
+      setTransfers(Array.isArray(trData) ? trData : []);
+      setUsersList(Array.isArray(uData) ? uData : []);
     } catch(e:any) { setError(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -140,7 +155,7 @@ export default function Accounts() {
     const url  = editCat ? `/api/accounts/categories/${editCat.id}` : '/api/accounts/categories';
     const meth = editCat ? 'PUT' : 'POST';
     const res  = await fetch(url, { method:meth, headers:hj(), body:JSON.stringify(body) });
-    if(!res.ok) { toast('Failed', true); return; }
+    if(!res.ok) { const d = await res.json().catch(()=>({})); toast(d.error || 'Failed to save category', true); return; }
     setCatModal(false); setEditCat(null); load(); toast('Category saved!');
   }
 
@@ -162,6 +177,8 @@ export default function Accounts() {
   const TABS = [
     {id:'dashboard',    label:'Dashboard',    icon:BarChart2},
     {id:'transactions', label:'Transactions', icon:DollarSign},
+    ...(isAdmin ? [{id:'cash-in-hand' as const, label:'Cash in Hand', icon:Users}] : []),
+    ...(isAccountant ? [{id:'transfers' as const, label:'Transfers', icon:ArrowLeftRight}] : []),
     {id:'categories',   label:'Categories',   icon:Filter},
     {id:'reports',      label:'Reports',      icon:TrendingUp},
   ] as const;
@@ -298,6 +315,145 @@ export default function Accounts() {
             <TxTable rows={filtered} isAdmin={isAdmin} isAccountant={isAccountant}
               onApprove={approveTx} onReject={t=>{setRejectModal(t);setRejectReason('');}} onDelete={deleteTx}
               onEdit={t=>{setEditTx(t);setTxType(t.type);setSelCat(t.category);setAddModal(true);}} statusBadge={statusBadge}/>
+          </div>
+        </div>
+      )}
+
+      {/* ── CASH IN HAND ── */}
+      {tab==='cash-in-hand' && isAdmin && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-50">
+              <h3 className="font-bold text-gray-900">Cash in Hand — Per User</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Shows who holds how much cash based on approved transactions and transfers.</p>
+            </div>
+            {cashInHand.length===0 ? (
+              <p className="px-5 py-10 text-center text-sm text-gray-400 italic">No cash data yet. Cash in hand will appear when ticket transactions are approved.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      {['User','Role','Cash In','Cash Out','Transfers Out','Transfers In','Pending Transfers','Net Balance'].map(h=>(
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {cashInHand.map((u:any)=>(
+                      <tr key={u.email} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-gray-900 text-xs">{u.name||u.nick_name||u.email}</p>
+                          <p className="text-[10px] text-gray-400">{u.email}</p>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{u.role}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-green-700">{PKR(u.cash_in)}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-red-700">{PKR(u.cash_out)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{PKR(u.transfers_out)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{PKR(u.transfers_in)}</td>
+                        <td className="px-4 py-3 text-xs">{u.pending_transfers>0 ? <span className="bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded-full">{PKR(u.pending_transfers)}</span> : '—'}</td>
+                        <td className="px-4 py-3 font-bold text-sm">
+                          <span className={u.balance>=0?'text-indigo-700':'text-red-600'}>{PKR(u.balance)}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── TRANSFERS ── */}
+      {tab==='transfers' && isAccountant && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={()=>setTransferModal(true)} className="btn-primary"><Send className="w-4 h-4 mr-1.5"/>New Transfer</button>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-50">
+              <h3 className="font-bold text-gray-900">Cash Transfers</h3>
+            </div>
+            {transfers.length===0 ? (
+              <p className="px-5 py-10 text-center text-sm text-gray-400 italic">No cash transfers yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      {['Date','From','To','Amount','Description','Status','Actions'].map(h=>(
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {transfers.map((t:any)=>(
+                      <tr key={t.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmt(t.created_at)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-700 font-medium">{t.from_user?.split('@')[0]}</td>
+                        <td className="px-4 py-3 text-xs text-gray-700 font-medium">{t.to_user?.split('@')[0]}</td>
+                        <td className="px-4 py-3 font-bold text-sm text-indigo-700">{PKR(t.amount)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500 max-w-[160px] truncate">{t.description||'—'}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadge(t.status)}`}>{t.status}</span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {isAdmin && t.status==='Pending' && (
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={async()=>{
+                                const res=await fetch(`/api/accounts/transfers/${t.id}/approve`,{method:'PUT',headers:hj()});
+                                if(res.ok){load();toast('Transfer approved!');}else{const d=await res.json();toast(d.error||'Failed',true);}
+                              }} className="text-green-600 hover:text-green-700" title="Approve"><Check className="w-4 h-4"/></button>
+                              <button onClick={async()=>{
+                                const reason=window.prompt('Rejection reason (optional):');
+                                if(reason===null)return;
+                                const res=await fetch(`/api/accounts/transfers/${t.id}/reject`,{method:'PUT',headers:hj(),body:JSON.stringify({reason})});
+                                if(res.ok){load();toast('Transfer rejected.');}else{const d=await res.json();toast(d.error||'Failed',true);}
+                              }} className="text-red-500 hover:text-red-600" title="Reject"><X className="w-4 h-4"/></button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TRANSFER MODAL */}
+      {transferModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={()=>setTransferModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-lg font-bold text-gray-900">New Cash Transfer</h3>
+              <button onClick={()=>setTransferModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
+            </div>
+            <form onSubmit={async(e)=>{
+              e.preventDefault();
+              const fd=new FormData(e.currentTarget);
+              const body={to_user:fd.get('to_user'),amount:Number(fd.get('amount')),description:fd.get('description')};
+              const res=await fetch('/api/accounts/transfers',{method:'POST',headers:hj(),body:JSON.stringify(body)});
+              const d=await res.json();
+              if(!res.ok){toast(d.error||'Failed',true);return;}
+              setTransferModal(false);load();toast(d.status==='Approved'?'Transfer completed!':'Transfer submitted for approval.');
+            }} className="space-y-4">
+              <div>
+                <label className="field-label">Transfer To</label>
+                <select name="to_user" required className="field">
+                  <option value="">Select user...</option>
+                  {usersList.filter((u:any)=>u.email!==user?.email && u.status==='Active').map((u:any)=>(
+                    <option key={u.email} value={u.email}>{u.name||u.nick_name||u.email} ({u.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div><label className="field-label">Amount (PKR)</label><input name="amount" type="number" min="1" required className="field"/></div>
+              <div><label className="field-label">Description (optional)</label><input name="description" className="field" placeholder="e.g. Daily cash collection"/></div>
+              <button type="submit" className="btn-primary w-full">Submit Transfer</button>
+            </form>
           </div>
         </div>
       )}
