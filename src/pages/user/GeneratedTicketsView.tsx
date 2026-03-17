@@ -49,49 +49,40 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
     });
 
     const logoTag = logoB64
-      ? `<img src="${logoB64}" style="width:12mm;height:12mm;object-fit:contain;display:block;margin:0 auto 1mm;">`
+      ? `<img src="${logoB64}" style="width:16mm;height:12mm;object-fit:contain;">`
       : '';
 
     return `
-<div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;margin-bottom:4mm;">
+<div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;">
 
-  <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:2.5mm;margin-bottom:2.5mm;">
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     ${logoTag}
-    <div style="font-size:15px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">KARTAL</div>
-    <div style="font-size:7.5px;letter-spacing:2px;">GROUP OF COMPANIES</div>
-    <div style="font-size:7.5px;margin-top:1.5mm;border-top:1px dashed #000;padding-top:1.5mm;letter-spacing:1px;">*** KARTAL MART ***</div>
+    <div style="text-align:right;">
+      <div style="font-size:14px;font-weight:900;letter-spacing:2px;font-family:Georgia,serif;line-height:1.1;">KARTAL</div>
+      <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
+    </div>
   </div>
 
-  <div style="text-align:center;background:#000;color:#fff;padding:2mm;margin-bottom:2mm;">
-    <div style="font-size:7.5px;letter-spacing:2px;">TICKET NUMBER</div>
-    <div style="font-size:21px;font-weight:900;letter-spacing:3px;line-height:1.15;">${ticket.ticket_id}</div>
+  <div style="text-align:center;background:#000;color:#fff;padding:1.5mm;margin-bottom:1.5mm;">
+    <div style="font-size:7px;letter-spacing:2px;">TICKET NUMBER</div>
+    <div style="font-size:20px;font-weight:900;letter-spacing:3px;line-height:1.1;">${ticket.ticket_id}</div>
   </div>
 
-  <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:2mm 0;margin-bottom:2mm;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:1mm;"><span style="color:#555;font-size:9px;">Name:</span><span style="font-weight:900;font-size:11px;text-align:right;">${ticket.name}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:1mm;"><span style="color:#555;font-size:9px;">Mobile:</span><span style="font-weight:600;font-size:11px;">${mobile}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Address:</span><span style="font-size:9px;text-align:right;max-width:45mm;">${ticket.address || 'N/A'}</span></div>
+  <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:1.5mm 0;margin-bottom:1.5mm;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Name:</span><span style="font-weight:900;font-size:10px;text-align:right;">${ticket.name}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Mobile:</span><span style="font-weight:600;font-size:10px;">${mobile}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Address:</span><span style="font-size:8px;text-align:right;max-width:45mm;">${ticket.address || 'N/A'}</span></div>
   </div>
 
-  <div style="padding:1mm 0;margin-bottom:2mm;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:1mm;"><span style="color:#555;font-size:9px;">TX ID:</span><span style="font-family:monospace;font-size:9px;">${ticket.tx_id}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-bottom:1mm;"><span style="color:#555;font-size:9px;">Date:</span><span style="font-size:9px;">${date} ${time}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Agent:</span><span style="font-size:9px;">${ticket.generated_by_nick || ticket.generated_by}</span></div>
+  <div style="padding:1mm 0;margin-bottom:1.5mm;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">TX ID:</span><span style="font-family:monospace;font-size:8px;">${ticket.tx_id}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Date:</span><span style="font-size:8px;">${date} ${time}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Ticket:</span><span style="font-size:8px;">${ticket.person_ticket_index} of ${ticket.total_tickets_in_tx}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Agent:</span><span style="font-size:8px;">${ticket.generated_by_nick || ticket.generated_by}</span></div>
   </div>
 
-  <div style="text-align:center;margin:2mm 0;padding:2mm;border:1px solid #000;">
-    <div style="font-size:8px;letter-spacing:1px;">TICKET ${ticket.person_ticket_index} OF ${ticket.total_tickets_in_tx}</div>
-    <div style="font-size:18px;font-weight:900;font-family:monospace;letter-spacing:2px;margin-top:1mm;">${ticket.ticket_id}</div>
-    <div style="font-size:7px;color:#555;margin-top:1mm;">Scan QR in app to verify</div>
-  </div>
-
-  <div style="text-align:center;font-family:serif;font-size:10px;direction:rtl;margin:2mm 0;line-height:1.6;">
-    تصدیق کے لیے ایپ میں اسکین کریں
-  </div>
-
-  <div style="border-top:2px solid #000;padding-top:2mm;text-align:center;">
-    <div style="font-size:8px;letter-spacing:1px;">*** KEEP THIS TICKET SAFE ***</div>
-    <div style="font-size:7.5px;margin-top:0.5mm;">kartal.com.pk</div>
+  <div style="text-align:center;font-family:serif;font-size:9px;direction:rtl;margin:1.5mm 0;line-height:1.6;">
+    تصدیق کے لیے اسکین کریں
   </div>
 </div>`;
   }).join('<div style="height:2mm;"></div>');

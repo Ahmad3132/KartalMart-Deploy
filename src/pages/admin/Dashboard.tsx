@@ -74,7 +74,10 @@ export default function AdminDashboard() {
       });
       if (res.ok) {
         const data = await res.json();
-        setGraphData(data);
+        // Map server field names to chart field names
+        const revenue = (data.revenue || []).map((r: any) => ({ date: r.day, amount: r.total || 0 }));
+        const onlineVsOffline = (data.onlineVsOffline || []).map((r: any) => ({ name: r.payment_type || 'Unknown', value: r.count || 0 }));
+        setGraphData({ revenue, onlineVsOffline, sales: data.sales, growth: data.growth });
       }
     } catch (err) {
       console.error('Failed to fetch graph data:', err);
@@ -186,25 +189,25 @@ export default function AdminDashboard() {
       win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Print Ticket</title>
 <style>* { margin:0;padding:0;box-sizing:border-box; } @page { size:80mm auto;margin:2mm; } html,body{width:80mm;background:#fff;} body{display:flex;flex-direction:column;align-items:center;padding:2mm;}</style>
 </head><body>
-<div style="width:72mm;font-family:'Courier New',monospace;font-size:11px;color:#000;">
-  <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
-    <div style="font-size:15px;font-weight:900;letter-spacing:3px;font-family:Georgia,serif;">KARTAL</div>
-    <div style="font-size:7px;letter-spacing:2px;">GROUP OF COMPANIES</div>
-    <div style="font-size:7px;border-top:1px dashed #000;margin-top:1.5mm;padding-top:1.5mm;">*** KARTAL MART ***</div>
+<div style="width:72mm;font-family:'Courier New',monospace;font-size:11px;color:#000;padding:3mm;">
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
+    <div style="text-align:right;margin-left:auto;">
+      <div style="font-size:14px;font-weight:900;letter-spacing:2px;font-family:Georgia,serif;line-height:1.1;">KARTAL</div>
+      <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
+    </div>
   </div>
-  <div style="text-align:center;background:#000;color:#fff;padding:2mm;margin-bottom:2mm;">
+  <div style="text-align:center;background:#000;color:#fff;padding:1.5mm;margin-bottom:1.5mm;">
     <div style="font-size:7px;letter-spacing:2px;">TICKET NUMBER</div>
-    <div style="font-size:21px;font-weight:900;letter-spacing:3px;">${ticket.ticket_id}</div>
+    <div style="font-size:20px;font-weight:900;letter-spacing:3px;">${ticket.ticket_id}</div>
   </div>
   <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:1.5mm 0;margin-bottom:1.5mm;">
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Name:</span><span style="font-weight:900;">${ticket.name}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:9px;">Mobile:</span><span>${ticket.mobile}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Name:</span><span style="font-weight:900;font-size:10px;">${ticket.name}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Mobile:</span><span style="font-size:10px;">${ticket.mobile}</span></div>
   </div>
-  <div style="padding:1mm 0;font-size:9px;">
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
+  <div style="padding:1mm 0;font-size:8px;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
     <div style="display:flex;justify-content:space-between;"><span style="color:#555;">Date:</span><span>${date}</span></div>
   </div>
-  <div style="border-top:2px solid #000;margin-top:1.5mm;padding-top:1.5mm;text-align:center;font-size:8px;">*** KEEP THIS TICKET SAFE ***</div>
 </div>
 <script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},1500);},300);};</script>
 </body></html>`);

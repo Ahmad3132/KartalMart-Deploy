@@ -498,7 +498,6 @@ export default function Settings() {
                 <select name="role" defaultValue={editing?.role||'User'} className="field">
                   <option value="Admin">Admin</option>
                   <option value="User">User</option>
-                  <option value="Accountant">Accountant</option>
                   {roles.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}
                 </select>
               </div>

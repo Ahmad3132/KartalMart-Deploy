@@ -248,6 +248,10 @@ const migrations = [
   { table: 'tickets', column: 'created_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
   { table: 'account_transactions', column: 'user_email', type: 'TEXT' },
   { table: 'users', column: 'pdf_download_enabled', type: 'INTEGER DEFAULT 1' },
+  { table: 'users', column: 'generate_ticket_enabled', type: 'INTEGER DEFAULT 1' },
+  { table: 'users', column: 'scanner_enabled', type: 'INTEGER DEFAULT 1' },
+  { table: 'users', column: 'bulk_print_enabled', type: 'INTEGER DEFAULT 1' },
+  { table: 'users', column: 'reports_enabled', type: 'INTEGER DEFAULT 1' },
   { table: 'transactions', column: 'workflow_step', type: 'INTEGER DEFAULT 0' },
   { table: 'transactions', column: 'step1_user', type: 'TEXT' },
   { table: 'transactions', column: 'step2_user', type: 'TEXT' },
@@ -419,46 +423,53 @@ async function startServer() {
 
   app.put('/api/users/:email', authenticateToken, (req, res) => {
     const { email } = req.params;
-    const { 
-      role, status, password, name, nick_name, 
-      whatsapp_redirect_enabled, whatsapp_integration_enabled, 
-      multi_person_logic_enabled, duplicate_tx_enabled, 
-      require_all_approvals, whatsapp_redirect_after_scan, custom_role_id 
-    } = req.body;
-    
-    const redirectEnabled = whatsapp_redirect_enabled ? 1 : 0;
-    const waInt = whatsapp_integration_enabled ? 1 : 0;
-    const mpLogic = multi_person_logic_enabled ? 1 : 0;
-    const dupTx = duplicate_tx_enabled ? 1 : 0;
-    const reqApp = require_all_approvals ? 1 : 0;
-    const waScan = whatsapp_redirect_after_scan ? 1 : 0;
+    const body = req.body;
 
-    if (password) {
-      const hashedPassword = bcrypt.hashSync(password, 10);
-      db.prepare(`
-        UPDATE users SET 
-          role = ?, status = ?, password = ?, name = ?, nick_name = ?, 
-          whatsapp_redirect_enabled = ?, whatsapp_integration_enabled = ?, 
-          multi_person_logic_enabled = ?, duplicate_tx_enabled = ?, 
-          require_all_approvals = ?, whatsapp_redirect_after_scan = ?, custom_role_id = ? 
-        WHERE email = ?
-      `).run(
-        role, status, hashedPassword, name, nick_name, 
-        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, email
-      );
-    } else {
-      db.prepare(`
-        UPDATE users SET 
-          role = ?, status = ?, name = ?, nick_name = ?, 
-          whatsapp_redirect_enabled = ?, whatsapp_integration_enabled = ?, 
-          multi_person_logic_enabled = ?, duplicate_tx_enabled = ?, 
-          require_all_approvals = ?, whatsapp_redirect_after_scan = ?, custom_role_id = ? 
-        WHERE email = ?
-      `).run(
-        role, status, name, nick_name, 
-        redirectEnabled, waInt, mpLogic, dupTx, reqApp, waScan, custom_role_id, email
-      );
+    // Build dynamic update - only update fields that are present in the request
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    const boolFields = [
+      'whatsapp_redirect_enabled', 'whatsapp_integration_enabled',
+      'multi_person_logic_enabled', 'duplicate_tx_enabled',
+      'require_all_approvals', 'whatsapp_redirect_after_scan',
+      'pdf_download_enabled', 'generate_ticket_enabled',
+      'scanner_enabled', 'bulk_print_enabled', 'reports_enabled',
+      'receipt_required',
+    ];
+
+    const textFields = ['role', 'status', 'name', 'nick_name'];
+
+    for (const field of textFields) {
+      if (body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        values.push(body[field]);
+      }
     }
+
+    for (const field of boolFields) {
+      if (body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        values.push(body[field] ? 1 : 0);
+      }
+    }
+
+    if (body.custom_role_id !== undefined) {
+      updates.push('custom_role_id = ?');
+      values.push(body.custom_role_id);
+    }
+
+    if (body.password) {
+      updates.push('password = ?');
+      values.push(bcrypt.hashSync(body.password, 10));
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(email);
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE email = ?`).run(...values);
     res.json({ success: true });
   });
 
