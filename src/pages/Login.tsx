@@ -25,7 +25,7 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Invalid credentials');
       login(data);
-      navigate(data.role === 'Admin' ? '/admin' : '/user');
+      navigate(data.role === 'Admin' || data.role === 'Accountant' ? '/admin' : '/user');
     } catch (err: any) {
       setError(err.message);
     } finally {

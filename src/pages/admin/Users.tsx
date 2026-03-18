@@ -19,6 +19,7 @@ export default function Users() {
     scanner_enabled: true,
     bulk_print_enabled: true,
     reports_enabled: true,
+    accounts_enabled: false,
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
@@ -49,6 +50,7 @@ export default function Users() {
     scanner_enabled: true,
     bulk_print_enabled: true,
     reports_enabled: true,
+    accounts_enabled: false,
   });
 
   const save = async () => {
@@ -93,6 +95,7 @@ export default function Users() {
       scanner_enabled: u.scanner_enabled !== 0,
       bulk_print_enabled: u.bulk_print_enabled !== 0,
       reports_enabled: u.reports_enabled !== 0,
+      accounts_enabled: u.accounts_enabled === 1,
     });
     setShowForm(true);
   };
@@ -123,6 +126,7 @@ export default function Users() {
     { key: 'scanner_enabled', label: 'Scanner' },
     { key: 'bulk_print_enabled', label: 'Bulk Print' },
     { key: 'reports_enabled', label: 'Reports' },
+    { key: 'accounts_enabled', label: 'Accounts' },
   ];
 
   const filtered = users.filter(u =>
@@ -177,7 +181,7 @@ export default function Users() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                      u.role === 'Admin' ? 'bg-indigo-600' : 'bg-gray-400'
+                      u.role === 'Admin' ? 'bg-indigo-600' : u.role === 'Accountant' ? 'bg-blue-500' : 'bg-gray-400'
                     }`}>
                       {(u.name || u.email)[0]?.toUpperCase()}
                     </div>
@@ -191,7 +195,7 @@ export default function Users() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-                      u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                      u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : u.role === 'Accountant' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
                     }`}>{u.role}</span>
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${
                       u.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -328,6 +332,7 @@ export default function Users() {
                     value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                   >
                     <option value="User">User (Staff)</option>
+                    <option value="Accountant">Accountant</option>
                     <option value="Admin">Admin</option>
                   </select>
                 </div>

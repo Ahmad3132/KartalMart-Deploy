@@ -4,37 +4,60 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Ticket, Settings, Package, CheckCircle, FileText,
   LogOut, Printer, Menu, X, Scan, Users, UserPlus, Clock, BarChart2,
-  DollarSign, ClipboardList, ListChecks
+  DollarSign, ClipboardList, ListChecks, Banknote
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from '../components/Logo';
 
-const navItems = [
-  { name: 'Dashboard',        path: '/admin',           icon: LayoutDashboard },
-  { name: 'Generate Ticket',  path: '/admin/generate',  icon: Ticket },
-  { name: 'Customers',        path: '/admin/customers', icon: Users },
-  { name: 'Pending Approvals',path: '/admin/approvals', icon: CheckCircle, badge: true },
-  { name: 'Campaign Setup',   path: '/admin/campaigns', icon: Settings },
-  { name: 'Package Setup',    path: '/admin/packages',  icon: Package },
-  { name: 'Bulk Print',       path: '/admin/bulk-print',icon: Printer },
-  { name: 'Reports',          path: '/admin/reports',   icon: BarChart2 },
-  { name: 'Accounts',         path: '/admin/accounts',  icon: DollarSign },
-  { name: 'Audit Logs',       path: '/admin/audit',     icon: FileText },
-  { name: 'Scanner',          path: '/admin/scanner',   icon: Scan },
-  { name: 'Users',            path: '/admin/users',     icon: UserPlus },
-  { name: 'Flow2 - Create',   path: '/admin/flow2/step1', icon: ClipboardList },
-  { name: 'Flow2 - Complete', path: '/admin/flow2/step2', icon: ListChecks },
-  { name: 'Settings',         path: '/admin/settings',  icon: Settings },
+const allNavItems = [
+  { name: 'Dashboard',        path: '/admin',           icon: LayoutDashboard, roles: ['Admin', 'Accountant'] },
+  { name: 'Generate Ticket',  path: '/admin/generate',  icon: Ticket,          roles: ['Admin'], feature: 'generate_ticket_enabled' },
+  { name: 'Customers',        path: '/admin/customers', icon: Users,           roles: ['Admin'], feature: 'generate_ticket_enabled' },
+  { name: 'Pending Approvals',path: '/admin/approvals', icon: CheckCircle,     roles: ['Admin'], badge: true },
+  { name: 'Campaign Setup',   path: '/admin/campaigns', icon: Settings,        roles: ['Admin'] },
+  { name: 'Package Setup',    path: '/admin/packages',  icon: Package,         roles: ['Admin'] },
+  { name: 'Bulk Print',       path: '/admin/bulk-print',icon: Printer,         roles: ['Admin'], feature: 'bulk_print_enabled' },
+  { name: 'Reports',          path: '/admin/reports',   icon: BarChart2,       roles: ['Admin', 'Accountant'], feature: 'reports_enabled' },
+  { name: 'Accounts',         path: '/admin/accounts',  icon: DollarSign,      roles: ['Admin', 'Accountant'] },
+  { name: 'Salary & Loans',   path: '/admin/salary-loans', icon: Banknote,     roles: ['Admin', 'Accountant'] },
+  { name: 'Audit Logs',       path: '/admin/audit',     icon: FileText,        roles: ['Admin'] },
+  { name: 'Scanner',          path: '/admin/scanner',   icon: Scan,            roles: ['Admin'], feature: 'scanner_enabled' },
+  { name: 'Users',            path: '/admin/users',     icon: UserPlus,        roles: ['Admin'] },
+  { name: 'Flow2 - Create',   path: '/admin/flow2/step1', icon: ClipboardList, roles: ['Admin'] },
+  { name: 'Flow2 - Complete', path: '/admin/flow2/step2', icon: ListChecks,    roles: ['Admin'] },
+  { name: 'Settings',         path: '/admin/settings',  icon: Settings,        roles: ['Admin'] },
 ];
 
 export default function AdminLayout() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [me, setMe] = useState<any>(null);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+
+  // Fetch user details for feature toggles
+  useEffect(() => {
+    fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setMe(d); }).catch(() => {});
+  }, []);
+
+  // Filter nav items based on role and feature toggles
+  const navItems = allNavItems.filter(item => {
+    const role = me?.role || user?.role || 'Admin';
+    // Role check
+    if (item.roles && !item.roles.includes(role)) {
+      // Accountant: check if feature is enabled for configurable items
+      if (role === 'Accountant' && item.feature && me?.[item.feature] !== 0) {
+        // Feature is enabled for this accountant, show it
+      } else {
+        return false;
+      }
+    }
+    return true;
+  });
 
   useEffect(() => {
     const fetch_ = async () => {

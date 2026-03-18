@@ -214,6 +214,30 @@ db.exec(`
     linked_tx_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS salary_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL UNIQUE,
+    monthly_salary REAL NOT NULL DEFAULT 0,
+    effective_from DATE,
+    created_by TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_email) REFERENCES users(email)
+  );
+
+  CREATE TABLE IF NOT EXISTS salary_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL,
+    type TEXT NOT NULL,
+    amount REAL NOT NULL,
+    month TEXT,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'Pending',
+    approved_by TEXT,
+    approved_at DATETIME,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Migration: Add missing columns if they don't exist (for existing databases)
@@ -256,6 +280,7 @@ const migrations = [
   { table: 'transactions', column: 'step1_user', type: 'TEXT' },
   { table: 'transactions', column: 'step2_user', type: 'TEXT' },
   { table: 'transactions', column: 'step1_completed_at', type: 'DATETIME' },
+  { table: 'users', column: 'accounts_enabled', type: 'INTEGER DEFAULT 0' },
 ];
 
 for (const m of migrations) {
@@ -379,12 +404,12 @@ async function startServer() {
 
   // Users management
   app.get('/api/users/me', authenticateToken, (req: any, res: any) => {
-    const user = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, created_at FROM users WHERE email = ?').get(req.user.email);
+    const user = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, pdf_download_enabled, generate_ticket_enabled, scanner_enabled, bulk_print_enabled, reports_enabled, receipt_required, accounts_enabled, created_at FROM users WHERE email = ?').get(req.user.email);
     res.json(user);
   });
 
   app.get('/api/users', authenticateToken, (req, res) => {
-    const users = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, created_at FROM users').all();
+    const users = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, pdf_download_enabled, generate_ticket_enabled, scanner_enabled, bulk_print_enabled, reports_enabled, receipt_required, accounts_enabled, created_at FROM users').all();
     res.json(users);
   });
 
@@ -435,7 +460,7 @@ async function startServer() {
       'require_all_approvals', 'whatsapp_redirect_after_scan',
       'pdf_download_enabled', 'generate_ticket_enabled',
       'scanner_enabled', 'bulk_print_enabled', 'reports_enabled',
-      'receipt_required',
+      'receipt_required', 'accounts_enabled',
     ];
 
     const textFields = ['role', 'status', 'name', 'nick_name'];
@@ -1877,6 +1902,169 @@ async function startServer() {
     const ticket = db.prepare('SELECT ticket_id, name, mobile, tx_id, date, generated_by_nick FROM tickets WHERE ticket_id = ?').get(req.params.ticketId) as any;
     if (!ticket) return res.status(404).json({ error: 'Ticket not found', valid: false });
     res.json({ valid: true, ticket: { ...ticket, mobile: ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : '' } });
+  });
+
+  // ════════════════════════════════════════════
+  // SALARY / ADVANCE / LOAN MODULE
+  // ════════════════════════════════════════════
+
+  // GET salary configs
+  app.get('/api/salary/config', authenticateToken, (req: any, res: any) => {
+    try {
+      if (req.user.role === 'Admin' || req.user.role === 'Accountant') {
+        const configs = db.prepare(`
+          SELECT sc.*, u.name, u.nick_name, u.role FROM salary_config sc
+          LEFT JOIN users u ON sc.user_email = u.email
+          ORDER BY u.name
+        `).all();
+        res.json(configs);
+      } else {
+        const config = db.prepare('SELECT * FROM salary_config WHERE user_email = ?').get(req.user.email);
+        res.json(config ? [config] : []);
+      }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT salary config for a user (Admin only)
+  app.put('/api/salary/config/:email', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    const { email } = req.params;
+    const { monthly_salary, effective_from } = req.body;
+    try {
+      const existing = db.prepare('SELECT id FROM salary_config WHERE user_email = ?').get(email);
+      if (existing) {
+        db.prepare('UPDATE salary_config SET monthly_salary = ?, effective_from = ?, created_by = ?, updated_at = datetime(\'now\') WHERE user_email = ?')
+          .run(monthly_salary || 0, effective_from || null, req.user.email, email);
+      } else {
+        db.prepare('INSERT INTO salary_config (user_email, monthly_salary, effective_from, created_by) VALUES (?, ?, ?, ?)')
+          .run(email, monthly_salary || 0, effective_from || null, req.user.email);
+      }
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET salary transactions
+  app.get('/api/salary/transactions', authenticateToken, (req: any, res: any) => {
+    try {
+      if (req.user.role === 'Admin' || req.user.role === 'Accountant') {
+        const rows = db.prepare(`
+          SELECT st.*, u.name, u.nick_name FROM salary_transactions st
+          LEFT JOIN users u ON st.user_email = u.email
+          ORDER BY st.created_at DESC
+        `).all();
+        res.json(rows);
+      } else {
+        const rows = db.prepare('SELECT * FROM salary_transactions WHERE user_email = ? ORDER BY created_at DESC').all(req.user.email);
+        res.json(rows);
+      }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST salary transaction (Admin/Accountant)
+  app.post('/api/salary/transactions', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') return res.status(403).json({ error: 'Not authorized' });
+    const { user_email, type, amount, month, description } = req.body;
+    if (!user_email || !type || !amount) return res.status(400).json({ error: 'user_email, type, and amount are required' });
+    const validTypes = ['Salary', 'Advance', 'Loan', 'Loan Repayment'];
+    if (!validTypes.includes(type)) return res.status(400).json({ error: 'Invalid type. Must be: ' + validTypes.join(', ') });
+
+    // Duplicate check: same user, type, month within 60s
+    if (type === 'Salary' && month) {
+      const dup = db.prepare("SELECT id FROM salary_transactions WHERE user_email=? AND type='Salary' AND month=? AND status != 'Rejected'").get(user_email, month);
+      if (dup) return res.status(409).json({ error: `Salary for ${month} already exists for this user` });
+    }
+
+    try {
+      const status = req.user.role === 'Admin' ? 'Approved' : 'Pending';
+      const result = db.prepare('INSERT INTO salary_transactions (user_email, type, amount, month, description, status, approved_by, approved_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(user_email, type, amount, month || null, description || '', status,
+             status === 'Approved' ? req.user.email : null,
+             status === 'Approved' ? new Date().toISOString() : null,
+             req.user.email);
+
+      // Auto-create account transaction for Admin-approved salary/advance
+      if (status === 'Approved') {
+        const cat = type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
+        const acctType = type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
+        db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES (?, ?, ?, ?, ?, date('now'), ?, 'Approved', 'System', ?)`)
+          .run(acctType, amount, type === 'Loan Repayment' ? 'Other Income' : 'Salaries', type, `${type}: ${description || user_email}${month ? ' (' + month + ')' : ''}`, req.user.email, req.user.email);
+      }
+      res.json({ success: true, id: result.lastInsertRowid });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Approve salary transaction (Admin only)
+  app.put('/api/salary/transactions/:id/approve', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    const tx = db.prepare('SELECT * FROM salary_transactions WHERE id = ?').get(req.params.id) as any;
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    if (tx.status !== 'Pending') return res.status(400).json({ error: 'Only pending transactions can be approved' });
+
+    db.prepare("UPDATE salary_transactions SET status = 'Approved', approved_by = ?, approved_at = datetime('now') WHERE id = ?")
+      .run(req.user.email, req.params.id);
+
+    // Create corresponding account transaction
+    const acctType = tx.type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
+    db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES (?, ?, ?, ?, ?, date('now'), ?, 'Approved', 'System', ?)`)
+      .run(acctType, tx.amount, tx.type === 'Loan Repayment' ? 'Other Income' : 'Salaries', tx.type, `${tx.type}: ${tx.description || tx.user_email}${tx.month ? ' (' + tx.month + ')' : ''}`, req.user.email, req.user.email);
+
+    res.json({ success: true });
+  });
+
+  // Reject salary transaction (Admin only)
+  app.put('/api/salary/transactions/:id/reject', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    db.prepare("UPDATE salary_transactions SET status = 'Rejected' WHERE id = ? AND status = 'Pending'").run(req.params.id);
+    res.json({ success: true });
+  });
+
+  // GET salary summary for a user
+  app.get('/api/salary/summary/:email', authenticateToken, (req: any, res: any) => {
+    const email = req.params.email;
+    if (req.user.role !== 'Admin' && req.user.role !== 'Accountant' && req.user.email !== email) {
+      return res.status(403).json({ error: 'No permission' });
+    }
+    try {
+      const config = db.prepare('SELECT * FROM salary_config WHERE user_email = ?').get(email) as any;
+      const totalSalary = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM salary_transactions WHERE user_email=? AND type='Salary' AND status='Approved'").get(email) as any)?.total || 0;
+      const totalAdvance = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM salary_transactions WHERE user_email=? AND type='Advance' AND status='Approved'").get(email) as any)?.total || 0;
+      const totalLoan = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM salary_transactions WHERE user_email=? AND type='Loan' AND status='Approved'").get(email) as any)?.total || 0;
+      const totalRepayment = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM salary_transactions WHERE user_email=? AND type='Loan Repayment' AND status='Approved'").get(email) as any)?.total || 0;
+      const recentTx = db.prepare("SELECT * FROM salary_transactions WHERE user_email=? ORDER BY created_at DESC LIMIT 20").all(email);
+      res.json({
+        monthly_salary: config?.monthly_salary || 0,
+        effective_from: config?.effective_from,
+        total_salary_paid: totalSalary,
+        total_advance: totalAdvance,
+        total_loan: totalLoan,
+        total_repayment: totalRepayment,
+        loan_balance: totalLoan - totalRepayment,
+        recent_transactions: recentTx,
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Process monthly salary for all users (Admin only)
+  app.post('/api/salary/process-monthly', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    const { month } = req.body; // 'YYYY-MM'
+    if (!month) return res.status(400).json({ error: 'month is required (YYYY-MM)' });
+    try {
+      const configs = db.prepare('SELECT * FROM salary_config WHERE monthly_salary > 0').all() as any[];
+      let processed = 0, skipped = 0;
+      for (const cfg of configs) {
+        // Check if already paid for this month
+        const existing = db.prepare("SELECT id FROM salary_transactions WHERE user_email=? AND type='Salary' AND month=? AND status != 'Rejected'").get(cfg.user_email, month);
+        if (existing) { skipped++; continue; }
+        db.prepare('INSERT INTO salary_transactions (user_email, type, amount, month, description, status, approved_by, approved_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(cfg.user_email, 'Salary', cfg.monthly_salary, month, `Monthly salary for ${month}`, 'Approved', req.user.email, new Date().toISOString(), req.user.email);
+        // Create Cash Out account transaction
+        db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES ('Cash Out', ?, 'Salaries', 'Salary', ?, date('now'), ?, 'Approved', 'System', ?)`)
+          .run(cfg.monthly_salary, `Monthly salary for ${month}: ${cfg.user_email}`, req.user.email, req.user.email);
+        processed++;
+      }
+      res.json({ success: true, processed, skipped, total: configs.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // API 404 handler - MUST be after all API routes but before Vite/SPA fallback
