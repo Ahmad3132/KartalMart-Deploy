@@ -1740,12 +1740,16 @@ async function startServer() {
   app.get('/api/accounts/cash-in-hand', authenticateToken, (req: any, res: any) => {
     try {
       const calcUserCash = (email: string, name: string, nick_name: string, role: string) => {
+        // All approved Cash In (includes ticket sales, transfer-in, capital investment)
         const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash In' AND status='Approved'").get(email) as any)?.total || 0;
+        // All approved Cash Out (includes expenses, transfer-out)
         const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash Out' AND status='Approved'").get(email) as any)?.total || 0;
+        // Transfer totals are for DISPLAY ONLY (already included in cashIn/cashOut via account_transactions)
         const transfersOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Approved'").get(email) as any)?.total || 0;
         const transfersIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE to_user=? AND status='Approved'").get(email) as any)?.total || 0;
         const pendingOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Pending'").get(email) as any)?.total || 0;
-        return { email, name, nick_name, role, cash_in: cashIn, cash_out: cashOut, transfers_out: transfersOut, transfers_in: transfersIn, pending_transfers: pendingOut, balance: cashIn - cashOut - transfersOut + transfersIn };
+        // Balance = cashIn - cashOut ONLY (transfers already reflected in account_transactions, NOT double-counted)
+        return { email, name, nick_name, role, cash_in: cashIn, cash_out: cashOut, transfers_out: transfersOut, transfers_in: transfersIn, pending_transfers: pendingOut, balance: cashIn - cashOut };
       };
       // Non-admin users see only their own cash-in-hand
       if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') {
@@ -1854,12 +1858,12 @@ async function startServer() {
       const cashByCategory = db.prepare("SELECT type, category, COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND status='Approved' GROUP BY type, category").all(requestedEmail) as any[];
       // Transfer history
       const transfers = db.prepare("SELECT * FROM cash_transfers WHERE from_user=? OR to_user=? ORDER BY created_at DESC LIMIT 50").all(requestedEmail, requestedEmail) as any[];
-      // Current balance
+      // Current balance (transfers already in account_transactions, no double-count)
       const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash In' AND status='Approved'").get(requestedEmail) as any)?.total || 0;
       const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash Out' AND status='Approved'").get(requestedEmail) as any)?.total || 0;
       const transfersOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Approved'").get(requestedEmail) as any)?.total || 0;
       const transfersIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE to_user=? AND status='Approved'").get(requestedEmail) as any)?.total || 0;
-      const balance = cashIn - cashOut - transfersOut + transfersIn;
+      const balance = cashIn - cashOut; // No double-counting: transfers already in account_transactions
       res.json({ ticketSales, cashByCategory, transfers, balance, cashIn, cashOut, transfersOut, transfersIn });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
