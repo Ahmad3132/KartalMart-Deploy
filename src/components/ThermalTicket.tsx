@@ -36,7 +36,7 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
 
     const hasContact = companyPhone || companyEmail || companyWebsite;
 
-    const watermarkText = new Date().toLocaleString('en-PK', {
+    const watermarkText = new Date(ticket.date).toLocaleString('en-PK', {
       day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 

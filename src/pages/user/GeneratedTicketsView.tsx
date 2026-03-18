@@ -80,7 +80,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
         ${companyWebsite ? `<div>🌐 ${companyWebsite}</div>` : ''}
       </div>` : '';
 
-    const watermarkSection = watermarkEnabled ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date().toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : '';
+    const watermarkSection = watermarkEnabled ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date(ticket.date).toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : '';
 
     return `
 <div style="position:relative;width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;overflow:hidden;">
