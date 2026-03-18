@@ -2250,6 +2250,169 @@ async function startServer() {
   });
 
   // ════════════════════════════════════════════
+  // DAILY SETTLEMENT / CLOSING
+  // ════════════════════════════════════════════
+
+  db.exec(`CREATE TABLE IF NOT EXISTS daily_settlements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL UNIQUE,
+    total_cash_in REAL DEFAULT 0,
+    total_cash_out REAL DEFAULT 0,
+    total_ticket_sales REAL DEFAULT 0,
+    total_online REAL DEFAULT 0,
+    total_cash REAL DEFAULT 0,
+    net_balance REAL DEFAULT 0,
+    notes TEXT,
+    closed_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // GET settlement for a date (or today)
+  app.get('/api/settlements', authenticateToken, (req: any, res: any) => {
+    try {
+      const rows = db.prepare('SELECT * FROM daily_settlements ORDER BY date DESC LIMIT 30').all();
+      res.json(rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET daily summary (live, not yet closed)
+  app.get('/api/settlements/today', authenticateToken, (req: any, res: any) => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const existing = db.prepare('SELECT * FROM daily_settlements WHERE date = ?').get(today) as any;
+      if (existing) return res.json({ ...existing, closed: true });
+
+      // Calculate live totals
+      const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM account_transactions WHERE DATE(created_at)=? AND type='Cash In' AND status='Approved'").get(today) as any)?.t || 0;
+      const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM account_transactions WHERE DATE(created_at)=? AND type='Cash Out' AND status='Approved'").get(today) as any)?.t || 0;
+      const ticketSales = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE DATE(date)=? AND status='Generated'").get(today) as any)?.t || 0;
+      const onlineSales = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE DATE(date)=? AND status='Generated' AND payment_type='Online'").get(today) as any)?.t || 0;
+      const cashSales = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE DATE(date)=? AND status='Generated' AND payment_type='Cash'").get(today) as any)?.t || 0;
+
+      res.json({ date: today, total_cash_in: cashIn, total_cash_out: cashOut, total_ticket_sales: ticketSales,
+        total_online: onlineSales, total_cash: cashSales, net_balance: cashIn - cashOut, closed: false });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Close the day
+  app.post('/api/settlements/close', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const { date, notes } = req.body;
+      const targetDate = date || new Date().toISOString().slice(0, 10);
+
+      const existing = db.prepare('SELECT id FROM daily_settlements WHERE date = ?').get(targetDate);
+      if (existing) return res.status(400).json({ error: 'This day is already closed' });
+
+      const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM account_transactions WHERE DATE(created_at)=? AND type='Cash In' AND status='Approved'").get(targetDate) as any)?.t || 0;
+      const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM account_transactions WHERE DATE(created_at)=? AND type='Cash Out' AND status='Approved'").get(targetDate) as any)?.t || 0;
+      const ticketSales = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE DATE(date)=? AND status='Generated'").get(targetDate) as any)?.t || 0;
+      const onlineSales = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE DATE(date)=? AND status='Generated' AND payment_type='Online'").get(targetDate) as any)?.t || 0;
+      const cashSales = (db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM transactions WHERE DATE(date)=? AND status='Generated' AND payment_type='Cash'").get(targetDate) as any)?.t || 0;
+
+      db.prepare('INSERT INTO daily_settlements (date, total_cash_in, total_cash_out, total_ticket_sales, total_online, total_cash, net_balance, notes, closed_by) VALUES (?,?,?,?,?,?,?,?,?)')
+        .run(targetDate, cashIn, cashOut, ticketSales, onlineSales, cashSales, cashIn - cashOut, notes || '', req.user.email);
+
+      db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Daily Settlement', `Closed day: ${targetDate}`, req.user.email);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // REFUND / CANCELLATION SYSTEM
+  // ════════════════════════════════════════════
+
+  db.exec(`CREATE TABLE IF NOT EXISTS refunds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL,
+    transaction_id TEXT,
+    amount REAL NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT DEFAULT 'Pending',
+    refunded_by TEXT NOT NULL,
+    approved_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // GET refunds
+  app.get('/api/refunds', authenticateToken, (req: any, res: any) => {
+    try {
+      const rows = db.prepare('SELECT r.*, t.customer_name, t.mobile FROM refunds r LEFT JOIN tickets t ON r.ticket_id = t.id ORDER BY r.created_at DESC').all();
+      res.json(rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // CREATE refund request
+  app.post('/api/refunds', authenticateToken, (req: any, res: any) => {
+    try {
+      const { ticket_id, reason } = req.body;
+      if (!ticket_id || !reason) return res.status(400).json({ error: 'Ticket ID and reason required' });
+
+      // Check ticket exists
+      const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(ticket_id) as any;
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+      // Check if already refunded
+      const existingRefund = db.prepare("SELECT id FROM refunds WHERE ticket_id = ? AND status != 'Rejected'").get(ticket_id) as any;
+      if (existingRefund) return res.status(400).json({ error: 'Refund already exists for this ticket' });
+
+      // Get amount from transaction
+      const tx = db.prepare("SELECT amount FROM transactions WHERE tx_id = ?").get(ticket.tx_id) as any;
+      const amount = tx?.amount || 0;
+
+      const status = req.user.role === 'Admin' ? 'Approved' : 'Pending';
+      const result = db.prepare('INSERT INTO refunds (ticket_id, transaction_id, amount, reason, status, refunded_by, approved_by) VALUES (?,?,?,?,?,?,?)')
+        .run(ticket_id, ticket.tx_id, amount, reason, status, req.user.email, status === 'Approved' ? req.user.email : null);
+
+      // If auto-approved (admin), cancel ticket and reverse cash
+      if (status === 'Approved') {
+        db.prepare("UPDATE tickets SET status = 'Cancelled' WHERE id = ?").run(ticket_id);
+        // Create reverse cash entry
+        db.prepare("INSERT INTO account_transactions (user_email, type, amount, category, description, status) VALUES (?,?,?,?,?,?)")
+          .run(req.user.email, 'Cash Out', amount, 'Refund', `Refund for ticket #${ticket.ticket_id} - ${reason}`, 'Approved');
+      }
+
+      db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)')
+        .run('Refund Request', `Ticket #${ticket.ticket_id}, Amount: ${amount}, Reason: ${reason}`, req.user.email);
+
+      res.json({ id: result.lastInsertRowid, status });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Approve refund
+  app.put('/api/refunds/:id/approve', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const refund = db.prepare('SELECT * FROM refunds WHERE id = ?').get(req.params.id) as any;
+      if (!refund) return res.status(404).json({ error: 'Refund not found' });
+      if (refund.status !== 'Pending') return res.status(400).json({ error: 'Refund already processed' });
+
+      db.prepare("UPDATE refunds SET status = 'Approved', approved_by = ? WHERE id = ?").run(req.user.email, refund.id);
+
+      // Cancel ticket
+      db.prepare("UPDATE tickets SET status = 'Cancelled' WHERE id = ?").run(refund.ticket_id);
+
+      // Reverse cash entry
+      db.prepare("INSERT INTO account_transactions (user_email, type, amount, category, description, status) VALUES (?,?,?,?,?,?)")
+        .run(refund.refunded_by, 'Cash Out', refund.amount, 'Refund', `Refund approved for ticket #${refund.ticket_id}`, 'Approved');
+
+      db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)')
+        .run('Refund Approved', `Refund #${refund.id} for ticket #${refund.ticket_id}`, req.user.email);
+
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Reject refund
+  app.put('/api/refunds/:id/reject', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      db.prepare("UPDATE refunds SET status = 'Rejected', approved_by = ? WHERE id = ?").run(req.user.email, req.params.id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
   // RECEIPT GENERATION
   // ════════════════════════════════════════════
 

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Ticket, Settings, Package, CheckCircle, FileText,
   LogOut, Printer, Menu, X, Scan, Users, UserPlus, Clock, BarChart2,
-  DollarSign, ClipboardList, ListChecks, Banknote, Bell
+  DollarSign, ClipboardList, ListChecks, Banknote, Bell, RotateCcw, CalendarCheck, Receipt
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from '../components/Logo';
@@ -20,6 +20,9 @@ const allNavItems = [
   { name: 'Reports',          path: '/admin/reports',   icon: BarChart2,       roles: ['Admin', 'Accountant'], feature: 'reports_enabled' },
   { name: 'Accounts',         path: '/admin/accounts',  icon: DollarSign,      roles: ['Admin', 'Accountant'] },
   { name: 'Invoices',          path: '/admin/invoices',     icon: FileText,     roles: ['Admin', 'Accountant'] },
+  { name: 'Receipts',          path: '/admin/receipts',     icon: Receipt,       roles: ['Admin', 'Accountant'] },
+  { name: 'Daily Settlement',  path: '/admin/settlement',   icon: CalendarCheck, roles: ['Admin'] },
+  { name: 'Refunds',           path: '/admin/refunds',      icon: RotateCcw,     roles: ['Admin', 'Accountant'] },
   { name: 'Salary & Loans',   path: '/admin/salary-loans', icon: Banknote,     roles: ['Admin', 'Accountant'] },
   { name: 'Audit Logs',       path: '/admin/audit',     icon: FileText,        roles: ['Admin'] },
   { name: 'Scanner',          path: '/admin/scanner',   icon: Scan,            roles: ['Admin'], feature: 'scanner_enabled' },

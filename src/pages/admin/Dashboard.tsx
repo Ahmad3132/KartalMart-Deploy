@@ -531,7 +531,7 @@ export default function AdminDashboard() {
                     <span className="text-xs text-gray-400">{new Date(tx.date).toLocaleDateString()}</span>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => navigate(`/admin/transactions/pending`)}
+                        onClick={() => navigate(`/admin/approvals`)}
                         className="p-2 text-gray-400 hover:text-gray-600"
                       >
                         <Eye className="w-4 h-4" />
