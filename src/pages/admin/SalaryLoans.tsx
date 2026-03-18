@@ -3,7 +3,7 @@ import { DollarSign, Plus, Check, X, ChevronDown, Users, Banknote, CreditCard, F
 import { formatPKR } from '../../utils/api';
 
 // Separate component to avoid useState inside map
-function SalaryRow({ u, cfg, isAdmin, onSave }: { key?: any; u: any; cfg: any; isAdmin: boolean; onSave: (email: string, salary: number) => void }) {
+const SalaryRow: React.FC<{ u: any; cfg: any; isAdmin: boolean; onSave: (email: string, salary: number) => Promise<void> | void }> = ({ u, cfg, isAdmin, onSave }) => {
   const [editVal, setEditVal] = useState(cfg?.monthly_salary?.toString() || '0');
   return (
     <tr className="border-t border-gray-50 hover:bg-gray-50">
@@ -32,7 +32,7 @@ function SalaryRow({ u, cfg, isAdmin, onSave }: { key?: any; u: any; cfg: any; i
       )}
     </tr>
   );
-}
+};
 
 type Tab = 'setup' | 'payroll' | 'advances' | 'loans' | 'summary';
 

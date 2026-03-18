@@ -878,8 +878,9 @@ async function startServer() {
       return res.status(400).json({ error: 'Duplicate Transaction ID is not allowed for your account.' });
     }
 
-    // If approval is required OR it's a multi-person transaction, it goes to Pending
-    if (reqAppEnabled || is_multi_person) {
+    // If approval is required it goes to Pending — but Admin always bypasses approval
+    const needsApproval = currentUser.role !== 'Admin' && (reqAppEnabled || is_multi_person);
+    if (needsApproval) {
       const reason = is_multi_person ? 'Multi-person transaction' : 'User requirement';
 
       db.prepare(`
