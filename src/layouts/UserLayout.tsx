@@ -5,14 +5,14 @@ import { LayoutDashboard, Ticket, FileText, LogOut, Printer, Menu, X, Scan, Plus
 import { cn } from '../lib/utils';
 import { Logo } from '../components/Logo';
 
-const navItems = [
+const allNavItems = [
   { name: 'Dashboard', path: '/user', icon: LayoutDashboard },
-  { name: 'Generate Ticket', path: '/user/generate', icon: PlusCircle },
+  { name: 'Generate Ticket', path: '/user/generate', icon: PlusCircle, feature: 'generate_ticket_enabled' },
   { name: 'My Tickets', path: '/user/tickets', icon: Ticket },
-  { name: 'Bulk Print', path: '/user/bulk-print', icon: Printer },
-  { name: 'Reports', path: '/user/reports', icon: FileText },
-  { name: 'Scanner', path: '/user/scanner', icon: Scan },
-  { name: 'My Cash', path: '/user/accounts', icon: Wallet },
+  { name: 'Bulk Print', path: '/user/bulk-print', icon: Printer, feature: 'bulk_print_enabled' },
+  { name: 'Reports', path: '/user/reports', icon: FileText, feature: 'reports_enabled' },
+  { name: 'Scanner', path: '/user/scanner', icon: Scan, feature: 'scanner_enabled' },
+  { name: 'My Cash', path: '/user/accounts', icon: Wallet, feature: 'accounts_enabled' },
   { name: 'Flow2 - Complete', path: '/user/flow2/step2', icon: ListChecks },
 ];
 
@@ -24,8 +24,22 @@ export default function UserLayout() {
   const [notifCount, setNotifCount] = useState(0);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [me, setMe] = useState<any>(null);
 
   useEffect(() => { setIsMobileMenuOpen(false); setShowNotifs(false); }, [location.pathname]);
+
+  // Fetch user details for feature toggles
+  useEffect(() => {
+    fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setMe(d); }).catch(() => {});
+  }, []);
+
+  // Filter nav items based on admin-controlled feature toggles
+  const navItems = allNavItems.filter(item => {
+    if (!item.feature) return true; // No feature gate = always show
+    if (!me) return true; // Still loading = show all
+    return me[item.feature] !== 0; // Admin disabled = hide
+  });
 
   // Fetch notifications
   useEffect(() => {
