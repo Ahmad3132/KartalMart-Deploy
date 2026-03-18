@@ -37,9 +37,8 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
   if (!win) { alert('Please allow popups to enable printing.'); return; }
 
   const ticketBlocks = tickets.map(ticket => {
-    const mobile = isAdmin
-      ? (ticket.mobile || '')
-      : (ticket.mobile || '').slice(0, -3) + '***';
+    // Always mask mobile in printed tickets (even for admin)
+    const mobile = (ticket.mobile || '').slice(0, -3) + '***';
 
     const date = new Date(ticket.date).toLocaleDateString('en-PK', {
       day: '2-digit', month: '2-digit', year: '2-digit'
@@ -396,7 +395,7 @@ _Kartal Group of Companies_`;
               <div style={{ transform: 'scale(1)', transformOrigin: 'top center' }}>
                 <ThermalTicket
                   ticket={ticket}
-                  showFullMobile={isAdmin}
+                  showFullMobile={false}
                   ref={el => { thermalRefs.current[ticket.id] = el; }}
                 />
               </div>

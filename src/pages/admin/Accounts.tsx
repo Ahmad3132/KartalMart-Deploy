@@ -47,7 +47,11 @@ export default function Accounts() {
   const [cashInHand, setCashInHand] = useState<any[]>([]);
   const [transfers, setTransfers]   = useState<any[]>([]);
   const [transferModal, setTransferModal] = useState(false);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [usersList, setUsersList]   = useState<any[]>([]);
+  // User report modal
+  const [userReport, setUserReport] = useState<any>(null);
+  const [userReportEmail, setUserReportEmail] = useState('');
 
   // Add form
   const [txType, setTxType]         = useState<'Cash In'|'Cash Out'>('Cash In');
@@ -177,8 +181,8 @@ export default function Accounts() {
   const TABS = [
     {id:'dashboard',    label:'Dashboard',    icon:BarChart2},
     {id:'transactions', label:'Transactions', icon:DollarSign},
-    ...(isAdmin ? [{id:'cash-in-hand' as const, label:'Cash in Hand', icon:Users}] : []),
-    ...(isAccountant ? [{id:'transfers' as const, label:'Transfers', icon:ArrowLeftRight}] : []),
+    {id:'cash-in-hand' as const, label: isAdmin ? 'Cash in Hand' : 'My Cash', icon:Users},
+    {id:'transfers' as const, label:'Transfers', icon:ArrowLeftRight},
     {id:'categories',   label:'Categories',   icon:Filter},
     {id:'reports',      label:'Reports',      icon:TrendingUp},
   ] as const;
@@ -320,12 +324,24 @@ export default function Accounts() {
       )}
 
       {/* ── CASH IN HAND ── */}
-      {tab==='cash-in-hand' && isAdmin && (
+      {tab==='cash-in-hand' && (
         <div className="space-y-4">
+          {/* Deposit Cash shortcut for non-admin users */}
+          {!isAdmin && cashInHand.length > 0 && cashInHand[0]?.balance > 0 && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 flex items-center justify-between">
+              <div>
+                <p className="font-bold text-indigo-900">Your Cash Balance: {PKR(cashInHand[0].balance)}</p>
+                <p className="text-xs text-indigo-600 mt-0.5">Transfer collected cash to admin for reconciliation</p>
+              </div>
+              <button onClick={()=>setTransferModal(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700">
+                <Send className="w-4 h-4 inline mr-1.5"/>Deposit Cash
+              </button>
+            </div>
+          )}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-50">
-              <h3 className="font-bold text-gray-900">Cash in Hand — Per User</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Shows who holds how much cash based on approved transactions and transfers.</p>
+              <h3 className="font-bold text-gray-900">{isAdmin ? 'Cash in Hand — Per User' : 'My Cash Balance'}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Shows cash held based on approved transactions and transfers.</p>
             </div>
             {cashInHand.length===0 ? (
               <p className="px-5 py-10 text-center text-sm text-gray-400 italic">No cash data yet. Cash in hand will appear when ticket transactions are approved.</p>
@@ -341,7 +357,14 @@ export default function Accounts() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {cashInHand.map((u:any)=>(
-                      <tr key={u.email} className="hover:bg-gray-50">
+                      <tr key={u.email} className={`hover:bg-gray-50 ${isAdmin ? 'cursor-pointer' : ''}`}
+                        onClick={()=>{
+                          if(!isAdmin) return;
+                          setUserReportEmail(u.email);
+                          fetch(`/api/accounts/user-report/${encodeURIComponent(u.email)}`, { headers: h() })
+                            .then(r=>r.json()).then(d=>setUserReport({...d, userName: u.name||u.nick_name||u.email, email: u.email}))
+                            .catch(()=>toast('Failed to load report', true));
+                        }}>
                         <td className="px-4 py-3">
                           <p className="font-semibold text-gray-900 text-xs">{u.name||u.nick_name||u.email}</p>
                           <p className="text-[10px] text-gray-400">{u.email}</p>
@@ -366,7 +389,7 @@ export default function Accounts() {
       )}
 
       {/* ── TRANSFERS ── */}
-      {tab==='transfers' && isAccountant && (
+      {tab==='transfers' && (
         <div className="space-y-4">
           <div className="flex justify-end">
             <button onClick={()=>setTransferModal(true)} className="btn-primary"><Send className="w-4 h-4 mr-1.5"/>New Transfer</button>
@@ -434,12 +457,17 @@ export default function Accounts() {
             </div>
             <form onSubmit={async(e)=>{
               e.preventDefault();
-              const fd=new FormData(e.currentTarget);
-              const body={to_user:fd.get('to_user'),amount:Number(fd.get('amount')),description:fd.get('description')};
-              const res=await fetch('/api/accounts/transfers',{method:'POST',headers:hj(),body:JSON.stringify(body)});
-              const d=await res.json();
-              if(!res.ok){toast(d.error||'Failed',true);return;}
-              setTransferModal(false);load();toast(d.status==='Approved'?'Transfer completed!':'Transfer submitted for approval.');
+              if(transferSubmitting) return;
+              setTransferSubmitting(true);
+              try {
+                const fd=new FormData(e.currentTarget);
+                const body={to_user:fd.get('to_user'),amount:Number(fd.get('amount')),description:fd.get('description')};
+                const res=await fetch('/api/accounts/transfers',{method:'POST',headers:hj(),body:JSON.stringify(body)});
+                const d=await res.json();
+                if(!res.ok){toast(d.error||'Failed',true);return;}
+                setTransferModal(false);load();toast(d.status==='Approved'?'Transfer completed!':'Transfer submitted for approval.');
+              } catch { toast('Network error', true); }
+              finally { setTransferSubmitting(false); }
             }} className="space-y-4">
               <div>
                 <label className="field-label">Transfer To</label>
@@ -452,7 +480,9 @@ export default function Accounts() {
               </div>
               <div><label className="field-label">Amount (PKR)</label><input name="amount" type="number" min="1" required className="field"/></div>
               <div><label className="field-label">Description (optional)</label><input name="description" className="field" placeholder="e.g. Daily cash collection"/></div>
-              <button type="submit" className="btn-primary w-full">Submit Transfer</button>
+              <button type="submit" disabled={transferSubmitting} className="btn-primary w-full disabled:opacity-50">
+                {transferSubmitting ? 'Submitting...' : 'Submit Transfer'}
+              </button>
             </form>
           </div>
         </div>
@@ -583,6 +613,85 @@ export default function Accounts() {
             <div className="flex gap-3 mt-4">
               <button onClick={()=>setRejectModal(null)} className="flex-1 btn-secondary">Cancel</button>
               <button onClick={rejectTx} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700">Reject</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* USER REPORT MODAL */}
+      {userReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={()=>setUserReport(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{userReport.userName}</h3>
+                <p className="text-xs text-gray-400">{userReport.email}</p>
+              </div>
+              <button onClick={()=>setUserReport(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-green-600 font-semibold uppercase">Total Cash In</p>
+                  <p className="text-xl font-black text-green-700 mt-1">{PKR(userReport.cashIn || 0)}</p>
+                </div>
+                <div className="bg-red-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-red-600 font-semibold uppercase">Total Cash Out</p>
+                  <p className="text-xl font-black text-red-700 mt-1">{PKR(userReport.cashOut || 0)}</p>
+                </div>
+                <div className="bg-blue-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-blue-600 font-semibold uppercase">Ticket Sales</p>
+                  <p className="text-xl font-black text-blue-700 mt-1">{PKR(userReport.ticketSales?.total || 0)}</p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">{userReport.ticketSales?.count || 0} transactions</p>
+                </div>
+                <div className="bg-indigo-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-indigo-600 font-semibold uppercase">Net Balance</p>
+                  <p className={`text-xl font-black mt-1 ${(userReport.balance || 0) >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>{PKR(userReport.balance || 0)}</p>
+                </div>
+              </div>
+
+              {/* Category Breakdown */}
+              {userReport.cashByCategory?.length > 0 && (
+                <div>
+                  <h4 className="font-bold text-gray-900 text-sm mb-3">Breakdown by Category</h4>
+                  <div className="space-y-2">
+                    {userReport.cashByCategory.map((c: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.type === 'Cash In' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{c.type}</span>
+                          <span className="text-sm text-gray-700">{c.category}</span>
+                        </div>
+                        <span className="font-bold text-sm text-gray-900">{PKR(c.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Transfers */}
+              {userReport.transfers?.length > 0 && (
+                <div>
+                  <h4 className="font-bold text-gray-900 text-sm mb-3">Recent Transfers</h4>
+                  <div className="space-y-2">
+                    {userReport.transfers.slice(0, 10).map((t: any) => (
+                      <div key={t.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg text-xs">
+                        <div>
+                          <span className="text-gray-500">{fmt(t.created_at)}</span>
+                          <span className="mx-2 text-gray-300">·</span>
+                          <span className="text-gray-700">{t.from_user === userReport.email ? `→ ${t.to_user?.split('@')[0]}` : `← ${t.from_user?.split('@')[0]}`}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold ${t.from_user === userReport.email ? 'text-red-600' : 'text-green-600'}`}>
+                            {t.from_user === userReport.email ? '-' : '+'}{PKR(t.amount)}
+                          </span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${statusBadge(t.status)}`}>{t.status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1738,28 +1738,24 @@ async function startServer() {
 
   // GET cash-in-hand per user
   app.get('/api/accounts/cash-in-hand', authenticateToken, (req: any, res: any) => {
-    if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') return res.status(403).json({ error: 'No permission' });
     try {
+      const calcUserCash = (email: string, name: string, nick_name: string, role: string) => {
+        const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash In' AND status='Approved'").get(email) as any)?.total || 0;
+        const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash Out' AND status='Approved'").get(email) as any)?.total || 0;
+        const transfersOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Approved'").get(email) as any)?.total || 0;
+        const transfersIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE to_user=? AND status='Approved'").get(email) as any)?.total || 0;
+        const pendingOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Pending'").get(email) as any)?.total || 0;
+        return { email, name, nick_name, role, cash_in: cashIn, cash_out: cashOut, transfers_out: transfersOut, transfers_in: transfersIn, pending_transfers: pendingOut, balance: cashIn - cashOut - transfersOut + transfersIn };
+      };
+      // Non-admin users see only their own cash-in-hand
+      if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') {
+        const u = req.user;
+        return res.json([calcUserCash(u.email, u.name || '', u.nick_name || '', u.role)]);
+      }
+      // Admin/Accountant see all users
       const users = db.prepare("SELECT email, name, nick_name, role FROM users WHERE status='Active'").all() as any[];
-      const result = users.map((u: any) => {
-        // Cash In attributed to this user (approved only)
-        const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash In' AND status='Approved'").get(u.email) as any)?.total || 0;
-        // Cash Out attributed to this user (approved only)
-        const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash Out' AND status='Approved'").get(u.email) as any)?.total || 0;
-        // Transfers out (approved)
-        const transfersOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Approved'").get(u.email) as any)?.total || 0;
-        // Transfers in (approved)
-        const transfersIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE to_user=? AND status='Approved'").get(u.email) as any)?.total || 0;
-        // Pending transfers out
-        const pendingOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Pending'").get(u.email) as any)?.total || 0;
-        return {
-          email: u.email, name: u.name, nick_name: u.nick_name, role: u.role,
-          cash_in: cashIn, cash_out: cashOut,
-          transfers_out: transfersOut, transfers_in: transfersIn,
-          pending_transfers: pendingOut,
-          balance: cashIn - cashOut - transfersOut + transfersIn
-        };
-      }).filter((u: any) => u.cash_in > 0 || u.cash_out > 0 || u.transfers_out > 0 || u.transfers_in > 0 || u.balance !== 0);
+      const result = users.map((u: any) => calcUserCash(u.email, u.name || '', u.nick_name || '', u.role))
+        .filter((u: any) => u.cash_in > 0 || u.cash_out > 0 || u.transfers_out > 0 || u.transfers_in > 0 || u.balance !== 0);
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
@@ -1783,6 +1779,9 @@ async function startServer() {
     if (!to_user || !amount || amount <= 0) return res.status(400).json({ error: 'to_user and positive amount required' });
     const from_user = u.email;
     if (from_user === to_user) return res.status(400).json({ error: 'Cannot transfer to yourself' });
+    // Duplicate prevention: block same from+to+amount within 60 seconds
+    const dup = db.prepare("SELECT id FROM cash_transfers WHERE from_user=? AND to_user=? AND amount=? AND created_at >= datetime('now', '-60 seconds') AND status != 'Rejected'").get(from_user, to_user, amount) as any;
+    if (dup) return res.status(409).json({ error: 'Duplicate transfer detected. Please wait before submitting again.' });
     // Admin transfers auto-approve
     const status = u.role === 'Admin' ? 'Approved' : 'Pending';
     const approved_by = u.role === 'Admin' ? u.email : null;
@@ -1824,6 +1823,45 @@ async function startServer() {
     db.prepare("UPDATE cash_transfers SET status='Rejected', rejection_reason=? WHERE id=?").run(reason || null, req.params.id);
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Reject Transfer', `Transfer ${req.params.id} rejected: ${reason}`, req.user.email);
     res.json({ success: true });
+  });
+
+  // ════════════════════════════════════════════
+  // TICKET LOOKUP (authenticated, full details)
+  // ════════════════════════════════════════════
+  app.get('/api/tickets/lookup/:ticketId', authenticateToken, (req: any, res: any) => {
+    const ticket = db.prepare('SELECT ticket_id, name, mobile, address, tx_id, date, generated_by_nick, printed_count, user_email FROM tickets WHERE ticket_id = ?').get(req.params.ticketId) as any;
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    // Non-admin users see masked mobile
+    if (req.user.role !== 'Admin') {
+      ticket.mobile = ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : '';
+    }
+    res.json(ticket);
+  });
+
+  // ════════════════════════════════════════════
+  // PER-USER FINANCIAL REPORT
+  // ════════════════════════════════════════════
+  app.get('/api/accounts/user-report/:email', authenticateToken, (req: any, res: any) => {
+    const requestedEmail = req.params.email;
+    // Permission: Admin can view any user, others can only view themselves
+    if (req.user.role !== 'Admin' && req.user.email !== requestedEmail) {
+      return res.status(403).json({ error: 'No permission' });
+    }
+    try {
+      // Ticket sales totals
+      const ticketSales = db.prepare("SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as count FROM transactions WHERE user_email=? AND status='Generated'").get(requestedEmail) as any;
+      // Cash In/Out by category
+      const cashByCategory = db.prepare("SELECT type, category, COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND status='Approved' GROUP BY type, category").all(requestedEmail) as any[];
+      // Transfer history
+      const transfers = db.prepare("SELECT * FROM cash_transfers WHERE from_user=? OR to_user=? ORDER BY created_at DESC LIMIT 50").all(requestedEmail, requestedEmail) as any[];
+      // Current balance
+      const cashIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash In' AND status='Approved'").get(requestedEmail) as any)?.total || 0;
+      const cashOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM account_transactions WHERE user_email=? AND type='Cash Out' AND status='Approved'").get(requestedEmail) as any)?.total || 0;
+      const transfersOut = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE from_user=? AND status='Approved'").get(requestedEmail) as any)?.total || 0;
+      const transfersIn = (db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM cash_transfers WHERE to_user=? AND status='Approved'").get(requestedEmail) as any)?.total || 0;
+      const balance = cashIn - cashOut - transfersOut + transfersIn;
+      res.json({ ticketSales, cashByCategory, transfers, balance, cashIn, cashOut, transfersOut, transfersIn });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // ════════════════════════════════════════════

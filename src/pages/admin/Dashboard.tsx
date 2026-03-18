@@ -202,7 +202,7 @@ export default function AdminDashboard() {
   </div>
   <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:1.5mm 0;margin-bottom:1.5mm;">
     <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Name:</span><span style="font-weight:900;font-size:10px;">${ticket.name}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Mobile:</span><span style="font-size:10px;">${ticket.mobile}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Mobile:</span><span style="font-size:10px;">${ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : ''}</span></div>
   </div>
   <div style="padding:1mm 0;font-size:8px;">
     <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
@@ -323,24 +323,34 @@ export default function AdminDashboard() {
           </div>
           <div className="h-80">
             {graphData ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={graphData.revenue}>
-                  <defs>
-                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
-                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9CA3AF'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9CA3AF'}} />
-                  <Tooltip 
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
-                    itemStyle={{fontSize: '12px', fontWeight: 'bold'}}
-                  />
-                  <Area type="monotone" dataKey="amount" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              graphData.revenue.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={graphData.revenue}>
+                    <defs>
+                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9CA3AF'}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#9CA3AF'}} />
+                    <Tooltip
+                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
+                      itemStyle={{fontSize: '12px', fontWeight: 'bold'}}
+                    />
+                    <Area type="monotone" dataKey="amount" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400">
+                  <div className="text-center">
+                    <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="font-medium">No revenue data yet</p>
+                    <p className="text-sm mt-1">Revenue trends will appear here once tickets are sold</p>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400 italic">Loading chart data...</div>
             )}
@@ -357,27 +367,37 @@ export default function AdminDashboard() {
           </div>
           <div className="h-80">
             {graphData ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={graphData.onlineVsOffline}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {graphData.onlineVsOffline.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
-                  />
-                  <Legend verticalAlign="bottom" height={36}/>
-                </PieChart>
-              </ResponsiveContainer>
+              graphData.onlineVsOffline.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={graphData.onlineVsOffline}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {graphData.onlineVsOffline.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'}}
+                    />
+                    <Legend verticalAlign="bottom" height={36}/>
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400">
+                  <div className="text-center">
+                    <PieChartIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="font-medium">No payment data yet</p>
+                    <p className="text-sm mt-1">Payment distribution will appear here once transactions are processed</p>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400 italic">Loading chart data...</div>
             )}

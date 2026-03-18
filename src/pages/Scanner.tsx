@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import { Search, Ticket, User, Phone, MapPin, Calendar, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
+import { Search, Ticket, User, Phone, MapPin, Calendar, CheckCircle, XCircle, MessageSquare, Camera, CameraOff } from 'lucide-react';
 import { formatWANumber } from '../utils/api';
 
 export default function Scanner() {
@@ -8,13 +7,21 @@ export default function Scanner() {
   const [ticketData, setTicketData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cameraFailed, setCameraFailed] = useState(false);
   const [scannerReady, setScannerReady] = useState(false);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<any>(null);
+  const manualInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Small delay to ensure DOM element exists
-    const timer = setTimeout(() => {
+    let mounted = true;
+    const timer = setTimeout(async () => {
       try {
+        const { Html5QrcodeScanner } = await import('html5-qrcode');
+        if (!mounted) return;
+
+        const readerEl = document.getElementById('reader');
+        if (!readerEl) { setCameraFailed(true); return; }
+
         const scanner = new Html5QrcodeScanner('reader', {
           qrbox: { width: 250, height: 250 },
           fps: 5,
@@ -24,33 +31,32 @@ export default function Scanner() {
 
         scannerRef.current = scanner;
 
-        scanner.render(onScanSuccess, onScanError);
+        scanner.render(
+          (result: string) => {
+            scanner.clear().catch(() => {});
+            let ticketId = result;
+            try {
+              const parsed = JSON.parse(result);
+              if (parsed.id) ticketId = parsed.id;
+            } catch { /* plain text ticket ID */ }
+            setScanResult(ticketId);
+            fetchTicketDetails(ticketId);
+          },
+          () => { /* silently ignore scan errors */ }
+        );
         setScannerReady(true);
-
-        function onScanSuccess(result: string) {
-          scanner.clear().catch(() => {});
-          // Parse QR code - could be JSON or plain ticket ID
-          let ticketId = result;
-          try {
-            const parsed = JSON.parse(result);
-            if (parsed.id) ticketId = parsed.id;
-          } catch {
-            // Plain text ticket ID, use as-is
-          }
-          setScanResult(ticketId);
-          fetchTicketDetails(ticketId);
-        }
-
-        function onScanError(_err: any) {
-          // Silently ignore scan errors (camera adjusting, no QR visible, etc.)
-        }
       } catch (err) {
         console.error('Failed to initialize scanner:', err);
-        setError('Camera scanner could not be initialized. Please use manual search below.');
+        if (mounted) {
+          setCameraFailed(true);
+          // Focus manual input when camera fails
+          setTimeout(() => manualInputRef.current?.focus(), 100);
+        }
       }
     }, 300);
 
     return () => {
+      mounted = false;
       clearTimeout(timer);
       if (scannerRef.current) {
         scannerRef.current.clear().catch(() => {});
@@ -63,17 +69,11 @@ export default function Scanner() {
     setError(null);
     try {
       const res = await fetch(`/api/tickets/verify/${encodeURIComponent(ticketId)}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ticket not found');
-
-      // Handle both authenticated and public endpoints
-      const ticket = data.ticket;
-      setTicketData(ticket);
-
+      setTicketData(data.ticket);
     } catch (err: any) {
       setError(err.message);
       setTicketData(null);
@@ -114,31 +114,40 @@ export default function Scanner() {
           Ticket Scanner & Verification
         </h2>
 
-        {/* QR Scanner */}
-        <div id="reader" className="overflow-hidden rounded-lg border-2 border-dashed border-gray-200" style={{ minHeight: '200px' }}></div>
+        {/* QR Scanner or Camera Failed Notice */}
+        {cameraFailed ? (
+          <div className="rounded-lg border-2 border-dashed border-amber-200 bg-amber-50 p-8 text-center">
+            <CameraOff className="w-12 h-12 mx-auto text-amber-400 mb-3" />
+            <p className="text-amber-800 font-medium">Camera not available</p>
+            <p className="text-amber-600 text-sm mt-1">Use the search box below to look up tickets manually</p>
+          </div>
+        ) : (
+          <div id="reader" className="overflow-hidden rounded-lg border-2 border-dashed border-gray-200" style={{ minHeight: '200px' }}></div>
+        )}
 
         {/* Manual search */}
         <div className="mt-6">
-          <div className="relative flex items-center">
-            <div className="flex-grow border-t border-gray-200"></div>
-            <span className="flex-shrink mx-4 text-gray-400 text-sm">OR SEARCH MANUALLY</span>
-            <div className="flex-grow border-t border-gray-200"></div>
-          </div>
+          {!cameraFailed && (
+            <div className="relative flex items-center mb-4">
+              <div className="flex-grow border-t border-gray-200"></div>
+              <span className="flex-shrink mx-4 text-gray-400 text-sm">OR SEARCH MANUALLY</span>
+              <div className="flex-grow border-t border-gray-200"></div>
+            </div>
+          )}
 
-          <form onSubmit={handleManualSearch} className="mt-4 flex space-x-2">
+          <form onSubmit={handleManualSearch} className="flex space-x-2">
             <div className="relative flex-grow">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
+                ref={manualInputRef}
                 name="ticketId"
                 type="text"
                 placeholder="Enter Ticket ID (e.g. 26030001)"
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-lg"
+                autoFocus={cameraFailed}
               />
             </div>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-            >
+            <button type="submit" className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors">
               Verify
             </button>
           </form>

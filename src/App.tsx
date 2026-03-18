@@ -74,6 +74,7 @@ export default function App() {
             <Route path="tickets" element={<MyTickets />} />
             <Route path="reports" element={<UserReports />} />
             <Route path="scanner" element={<Scanner />} />
+            <Route path="accounts" element={<Accounts />} />
             <Route path="flow2/step2" element={<Flow2Step2 />} />
           </Route>
         </Routes>

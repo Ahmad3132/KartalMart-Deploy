@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LayoutDashboard, Ticket, FileText, LogOut, Printer, Menu, X, Scan, PlusCircle, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Ticket, FileText, LogOut, Printer, Menu, X, Scan, PlusCircle, ListChecks, Wallet } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from '../components/Logo';
 
@@ -12,6 +12,7 @@ const navItems = [
   { name: 'Bulk Print', path: '/user/bulk-print', icon: Printer },
   { name: 'Reports', path: '/user/reports', icon: FileText },
   { name: 'Scanner', path: '/user/scanner', icon: Scan },
+  { name: 'My Cash', path: '/user/accounts', icon: Wallet },
   { name: 'Flow2 - Complete', path: '/user/flow2/step2', icon: ListChecks },
 ];
 
