@@ -35,7 +35,7 @@ export const Logo: React.FC<LogoProps> = ({
         {imgEl}
         <div className="flex flex-col leading-tight">
           <span className="font-black text-xl tracking-wider" style={{ color: variant === 'light' ? '#fff' : '#1a2b4b', fontFamily: 'serif' }}>
-            KARTAL
+            KARTAL MART
           </span>
           <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: variant === 'light' ? '#e2c97e' : '#A48655' }}>
             Group of Companies
@@ -50,7 +50,7 @@ export const Logo: React.FC<LogoProps> = ({
       <div className="flex flex-col items-center gap-1">
         {imgEl}
         <span className="font-black text-lg tracking-wider" style={{ color: variant === 'light' ? '#fff' : '#1a2b4b', fontFamily: 'serif' }}>
-          KARTAL
+          KARTAL MART
         </span>
         <span className="text-[9px] font-semibold tracking-widest uppercase" style={{ color: '#A48655' }}>
           Group of Companies

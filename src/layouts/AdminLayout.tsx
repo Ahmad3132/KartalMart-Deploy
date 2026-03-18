@@ -114,7 +114,7 @@ export default function AdminLayout() {
       <div className="px-4 py-4 border-b border-gray-100 flex items-center gap-3">
         <Logo className="h-9 w-9" />
         <div className="flex flex-col leading-tight">
-          <span className="font-black text-base tracking-wider text-[#1a2b4b]" style={{ fontFamily: 'serif' }}>KARTAL</span>
+          <span className="font-black text-base tracking-wider text-[#1a2b4b]" style={{ fontFamily: 'serif' }}>KARTAL MART</span>
           <span className="text-[9px] font-semibold tracking-widest text-[#A48655] uppercase">Group of Companies</span>
         </div>
       </div>
@@ -161,7 +161,7 @@ export default function AdminLayout() {
       <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-2">
           <Logo className="h-8 w-8" />
-          <span className="font-black text-base text-[#1a2b4b]" style={{ fontFamily: 'serif' }}>KARTAL</span>
+          <span className="font-black text-base text-[#1a2b4b]" style={{ fontFamily: 'serif' }}>KARTAL MART</span>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowNotifs(v => !v)} className="relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg">

@@ -28,7 +28,7 @@ export const TicketCard = React.forwardRef<HTMLDivElement, TicketCardProps>(
           <div className="flex items-center gap-3">
             <img src={kartalLogo} alt="Kartal" className="h-10 w-10 object-contain" />
             <div>
-              <p className="text-white font-black text-base tracking-widest" style={{ fontFamily: 'serif' }}>KARTAL</p>
+              <p className="text-white font-black text-base tracking-widest" style={{ fontFamily: 'serif' }}>KARTAL MART</p>
               <p className="text-[#A48655] text-[9px] tracking-widest uppercase font-semibold">Group of Companies</p>
             </div>
           </div>

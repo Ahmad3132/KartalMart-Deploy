@@ -82,7 +82,7 @@ export function buildThermalHTML(ticket: any, showFullMobile = false, logoDataUr
   });
 
   const logoTag = logoDataUrl
-    ? `<img src="${logoDataUrl}" alt="Kartal" style="width:16mm;height:12mm;object-fit:contain;">`
+    ? `<img src="${logoDataUrl}" alt="Kartal MART" style="width:22mm;height:16mm;object-fit:contain;">`
     : '';
 
   return `
@@ -92,7 +92,7 @@ export function buildThermalHTML(ticket: any, showFullMobile = false, logoDataUr
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     ${logoTag}
     <div style="text-align:right;">
-      <div style="font-size:14px;font-weight:900;letter-spacing:2px;font-family:Georgia,serif;line-height:1.1;">KARTAL</div>
+      <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
       <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
     </div>
   </div>

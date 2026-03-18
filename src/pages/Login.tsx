@@ -46,7 +46,7 @@ export default function Login() {
         </div>
         <div className="relative z-10 flex flex-col items-center text-center">
           <img src={kartalLogo} alt="Kartal" className="h-40 w-40 object-contain mb-6 drop-shadow-2xl" />
-          <h1 className="text-4xl font-black text-white tracking-widest mb-2" style={{ fontFamily: 'serif' }}>KARTAL</h1>
+          <h1 className="text-4xl font-black text-white tracking-widest mb-2" style={{ fontFamily: 'serif' }}>KARTAL MART</h1>
           <p className="text-[#A48655] text-sm font-semibold tracking-[0.3em] uppercase mb-8">Group of Companies</p>
           <p className="text-white/50 text-sm max-w-xs leading-relaxed">KARTAL MART Management System — Manage campaigns, generate tickets, and track all sales in one place.</p>
         </div>
@@ -58,7 +58,7 @@ export default function Login() {
           {/* Mobile logo */}
           <div className="lg:hidden flex flex-col items-center mb-8">
             <img src={kartalLogo} alt="Kartal" className="h-20 w-20 object-contain mb-3" />
-            <h1 className="text-2xl font-black text-[#1a2b4b]" style={{ fontFamily: 'serif' }}>KARTAL</h1>
+            <h1 className="text-2xl font-black text-[#1a2b4b]" style={{ fontFamily: 'serif' }}>KARTAL MART</h1>
             <p className="text-[#A48655] text-xs font-semibold tracking-wider uppercase">Group of Companies</p>
           </div>
 

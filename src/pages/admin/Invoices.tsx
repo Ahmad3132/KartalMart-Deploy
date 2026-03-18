@@ -140,7 +140,7 @@ export default function Invoices() {
 
     // Header
     pdf.setFontSize(20); pdf.setFont('helvetica', 'bold');
-    pdf.text('KARTAL', 14, y);
+    pdf.text('KARTAL MART', 14, y);
     pdf.setFontSize(8); pdf.setFont('helvetica', 'normal');
     pdf.text('GROUP OF COMPANIES', 14, y + 5);
 
@@ -234,7 +234,7 @@ td{padding:8px;font-size:11px;border-bottom:1px solid #eee}.totals{text-align:ri
 .footer{margin-top:30px;text-align:center;font-size:9px;color:#999}
 @media print{body{padding:15px}@page{margin:10mm}}
 </style></head><body>
-<div class="hdr"><div><div class="co">KARTAL</div><div class="sub">GROUP OF COMPANIES</div></div>
+<div class="hdr"><div><div class="co">KARTAL MART</div><div class="sub">GROUP OF COMPANIES</div></div>
 <div><div class="inv-title">INVOICE</div><div class="inv-num">${inv.invoice_number}</div><div style="text-align:right;margin-top:5px"><span class="status">${inv.status}</span></div></div></div>
 <div class="info"><div><strong>Bill To:</strong><br>${inv.customer_name || '-'}<br>${inv.customer_mobile || ''}<br>${inv.customer_address || ''}</div>
 <div style="text-align:right"><strong>Date:</strong> ${new Date(inv.created_at).toLocaleDateString('en-PK')}<br>${inv.due_date ? `<strong>Due:</strong> ${inv.due_date}` : ''}${inv.paid_at ? `<br><strong>Paid:</strong> ${new Date(inv.paid_at).toLocaleDateString('en-PK')}` : ''}</div></div>

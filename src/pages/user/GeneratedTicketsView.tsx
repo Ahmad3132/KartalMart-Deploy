@@ -62,7 +62,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
     });
 
     const logoTag = logoB64
-      ? `<img src="${logoB64}" style="width:18mm;height:14mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
+      ? `<img src="${logoB64}" style="width:22mm;height:16mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
       : '';
 
     // QR code data as URL-safe string for the QR library

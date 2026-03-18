@@ -196,7 +196,7 @@ export default function AdminDashboard() {
 <div style="width:72mm;font-family:'Courier New',monospace;font-size:11px;color:#000;padding:3mm;">
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     <div style="text-align:right;margin-left:auto;">
-      <div style="font-size:14px;font-weight:900;letter-spacing:2px;font-family:Georgia,serif;line-height:1.1;">KARTAL</div>
+      <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
       <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
     </div>
   </div>
