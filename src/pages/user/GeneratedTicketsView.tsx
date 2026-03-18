@@ -131,7 +131,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
 <meta charset="UTF-8">
 <title>Kartal Ticket Print</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"><\/script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   @page { size: 80mm auto; margin: 2mm; }
@@ -142,31 +142,34 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
 </head><body>
 ${ticketBlocks}
 <script>
-window.onload = function() {
-  // Render QR codes on all canvases
+function renderAndPrint() {
   var canvases = document.querySelectorAll('.qr-canvas');
   var rendered = 0;
-  if (canvases.length === 0) {
-    setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 400);
-    return;
+  var total = canvases.length;
+  function doPrint() {
+    setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 600);
   }
+  if (total === 0) { doPrint(); return; }
   canvases.forEach(function(canvas) {
     var data = canvas.getAttribute('data-qr');
     if (data && typeof QRCode !== 'undefined') {
       QRCode.toCanvas(canvas, data, { width: 90, margin: 0, errorCorrectionLevel: 'H' }, function() {
         rendered++;
-        if (rendered >= canvases.length) {
-          setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 400);
-        }
+        if (rendered >= total) doPrint();
       });
     } else {
       rendered++;
-      if (rendered >= canvases.length) {
-        setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 400);
-      }
+      if (rendered >= total) doPrint();
     }
   });
-};
+}
+// Wait for QR library to load, then render
+function waitForQR(attempts) {
+  if (typeof QRCode !== 'undefined') { renderAndPrint(); return; }
+  if (attempts > 50) { renderAndPrint(); return; } // Fallback after 5s
+  setTimeout(function() { waitForQR(attempts + 1); }, 100);
+}
+window.onload = function() { waitForQR(0); };
 <\/script>
 </body></html>`);
   win.document.close();
