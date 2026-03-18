@@ -2809,7 +2809,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`SUCCESS: Server running on http://0.0.0.0:${PORT}`);
   });
 }

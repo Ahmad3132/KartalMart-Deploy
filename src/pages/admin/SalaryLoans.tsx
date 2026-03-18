@@ -3,7 +3,7 @@ import { DollarSign, Plus, Check, X, ChevronDown, Users, Banknote, CreditCard, F
 import { formatPKR } from '../../utils/api';
 
 // Separate component to avoid useState inside map
-function SalaryRow({ u, cfg, isAdmin, onSave }: { u: any; cfg: any; isAdmin: boolean; onSave: (email: string, salary: number) => void }) {
+function SalaryRow({ u, cfg, isAdmin, onSave }: { key?: any; u: any; cfg: any; isAdmin: boolean; onSave: (email: string, salary: number) => void }) {
   const [editVal, setEditVal] = useState(cfg?.monthly_salary?.toString() || '0');
   return (
     <tr className="border-t border-gray-50 hover:bg-gray-50">

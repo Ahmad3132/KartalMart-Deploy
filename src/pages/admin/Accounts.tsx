@@ -261,7 +261,7 @@ export default function Accounts() {
             } else if (tab === 'transfers') {
               exportCSV('transfers', ['From','To','Amount','Status','Description','Date'], transfers.map((t: any) => [t.from_user, t.to_user, t.amount, t.status, t.description || '', new Date(t.created_at).toLocaleDateString()]));
             } else {
-              exportCSV('transactions', ['Date','Type','Category','Amount','Description','User','Status'], transactions.map((t: any) => [fmt(t.created_at), t.type, t.category, t.amount, t.description || '', t.user_email || '', t.status]));
+              exportCSV('transactions', ['Date','Type','Category','Amount','Description','Created By','Status'], txList.map((t: any) => [fmt(t.date), t.type, t.category, t.amount, t.description || '', t.created_by || '', t.status]));
             }
           }} className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
             <Download className="w-3 h-3" /> Export CSV
