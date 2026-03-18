@@ -30,6 +30,7 @@ import Invoices from './pages/admin/Invoices';
 import Receipts from './pages/admin/Receipts';
 import DailySettlement from './pages/admin/DailySettlement';
 import Refunds from './pages/admin/Refunds';
+import Coupons from './pages/admin/Coupons';
 
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { user } = useAuth();
@@ -71,6 +72,7 @@ export default function App() {
             <Route path="receipts" element={<Receipts />} />
             <Route path="settlement" element={<DailySettlement />} />
             <Route path="refunds" element={<Refunds />} />
+            <Route path="coupons" element={<Coupons />} />
             <Route path="flow2/step1" element={<Flow2Step1 />} />
             <Route path="flow2/step2" element={<Flow2Step2 />} />
           </Route>

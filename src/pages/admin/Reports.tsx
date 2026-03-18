@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Download, Search, Calendar, User as UserIcon, CreditCard, Printer, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
+import { exportCSV } from '../../utils/exportCSV';
 
 export default function Reports() {
   const { user } = useAuth();
@@ -172,6 +173,16 @@ export default function Reports() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Kartal Group Reports</h1>
           <p className="mt-1 text-gray-500">Comprehensive analytics and transaction history.</p>
+          <button onClick={() => {
+            const data = activeView === 'all' ? filteredTickets : activeView === 'user-stats' ? userStats : myReports;
+            if (activeView === 'user-stats') {
+              exportCSV('user-stats', ['Email','Name','Total Sales','Total Amount','Printed','Not Printed'], data.map((u: any) => [u.email, u.name || '', u.total_tickets || 0, u.total_amount || 0, u.printed || 0, u.not_printed || 0]));
+            } else {
+              exportCSV('tickets-report', ['Ticket ID','Customer','Mobile','Amount','Date','Printed','Campaign'], data.map((t: any) => [t.ticket_id, t.customer_name || t.name, t.mobile, t.amount || '', new Date(t.date).toLocaleDateString(), t.printed ? 'Yes' : 'No', t.campaign_name || '']));
+            }
+          }} className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+            <Download className="w-3 h-3" /> Export CSV
+          </button>
           {dateFrom && new Date(dateFrom) < new Date(new Date().setHours(0,0,0,0)) && (
             <div className="mt-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
               <CheckCircle className="w-3 h-3 mr-1" /> Finalized Report

@@ -344,6 +344,22 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="border-t border-gray-100 pt-5">
+                  <h3 className="text-base font-bold text-gray-900 mb-3">Database Backup</h3>
+                  <p className="text-xs text-gray-500 mb-3">Download a full backup of the database. Use this for disaster recovery.</p>
+                  <button onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = '/api/admin/backup';
+                    a.setAttribute('download', '');
+                    const token = localStorage.getItem('kartal_token');
+                    fetch('/api/admin/backup', { headers: { 'Authorization': `Bearer ${token}` } })
+                      .then(r => r.blob())
+                      .then(blob => { const url = URL.createObjectURL(blob); a.href = url; a.download = `kartal-backup-${new Date().toISOString().slice(0,10)}.db`; a.click(); URL.revokeObjectURL(url); })
+                      .catch(() => toast('Backup failed', true));
+                  }} className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-800">
+                    <Save className="w-4 h-4" /> Download Backup
+                  </button>
+                </div>
+                <div className="border-t border-gray-100 pt-5">
                   <h3 className="text-base font-bold text-gray-900 mb-3">Ticket Template Settings</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                     <Toggle k="pdf_watermark_enabled" label="PDF Watermark" desc="Add date/time watermark on ticket PDFs to prevent fraud." icon={Shield}/>

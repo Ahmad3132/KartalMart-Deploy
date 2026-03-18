@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, MapPin, CreditCard, Calendar, Shield, Printer, MessageSquare, Share2, Send, FileDown, History, TrendingUp, Ticket, Eye, Search } from 'lucide-react';
+import { ArrowLeft, User, Phone, MapPin, CreditCard, Calendar, Shield, Printer, MessageSquare, Share2, Send, FileDown, History, TrendingUp, Ticket, Eye, Search, Tag, Plus, X } from 'lucide-react';
 
 export default function CustomerDetail() {
   const { mobile } = useParams();
@@ -10,9 +10,40 @@ export default function CustomerDetail() {
   const [error, setError] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
   const [historyFilter, setHistoryFilter] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
+  const [showTagInput, setShowTagInput] = useState(false);
+
+  const fetchTags = async () => {
+    try {
+      const r = await fetch(`/api/customers/${mobile}/tags`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
+      if (r.ok) { const d = await r.json(); setTags(Array.isArray(d) ? d.map((t: any) => t.tag || t) : []); }
+    } catch {}
+  };
+
+  const addTag = async () => {
+    if (!newTag.trim()) return;
+    try {
+      await fetch(`/api/customers/${mobile}/tags`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: newTag.trim() })
+      });
+      setNewTag(''); setShowTagInput(false); fetchTags();
+    } catch {}
+  };
+
+  const removeTag = async (tag: string) => {
+    try {
+      await fetch(`/api/customers/${mobile}/tags/${encodeURIComponent(tag)}`, {
+        method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
+      });
+      fetchTags();
+    } catch {}
+  };
 
   useEffect(() => {
     fetchCustomerData();
+    fetchTags();
   }, [mobile]);
 
   const fetchCustomerData = async () => {
@@ -144,6 +175,34 @@ export default function CustomerDetail() {
                 <span className="font-bold text-indigo-400">Rs. {(customer.total_spent / customer.total_transactions).toFixed(0)}</span>
               </div>
             </div>
+          </div>
+
+          {/* Customer Tags */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center">
+              <Tag className="w-4 h-4 mr-2 text-indigo-500" /> Customer Tags
+            </h3>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {tags.length === 0 && <p className="text-xs text-gray-400">No tags yet</p>}
+              {tags.map(tag => (
+                <span key={tag} className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
+                  {tag}
+                  <button onClick={() => removeTag(tag)} className="hover:text-red-600 ml-0.5"><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+            </div>
+            {showTagInput ? (
+              <div className="flex gap-2">
+                <input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTag()}
+                  placeholder="e.g. VIP, Repeat, Corporate" className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm" autoFocus />
+                <button onClick={addTag} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium">Add</button>
+                <button onClick={() => { setShowTagInput(false); setNewTag(''); }} className="px-2 py-1.5 text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              </div>
+            ) : (
+              <button onClick={() => setShowTagInput(true)} className="flex items-center gap-1 text-xs text-indigo-600 font-medium hover:text-indigo-800">
+                <Plus className="w-3 h-3" /> Add Tag
+              </button>
+            )}
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X, Check, AlertCircle, TrendingUp, TrendingDown, DollarSign,
   Filter, Download, Edit2, Trash2, Clock, ChevronDown, BarChart2, Search, Users, ArrowLeftRight, Send } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { exportCSV } from '../../utils/exportCSV';
 
 const h  = () => ({ 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` });
 const hj = () => ({ ...h(), 'Content-Type': 'application/json' });
@@ -193,6 +194,17 @@ export default function Accounts() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Accounts</h1>
           <p className="text-sm text-gray-400 mt-0.5">Central financial ledger — all money in and out.</p>
+          <button onClick={() => {
+            if (tab === 'cash-in-hand') {
+              exportCSV('cash-in-hand', ['User','Role','Cash In','Cash Out','Transfers Out','Transfers In','Net Balance'], cashInHand.map((u: any) => [u.email, u.role, u.cash_in, u.cash_out, u.transfers_out, u.transfers_in, u.balance]));
+            } else if (tab === 'transfers') {
+              exportCSV('transfers', ['From','To','Amount','Status','Description','Date'], transfers.map((t: any) => [t.from_user, t.to_user, t.amount, t.status, t.description || '', new Date(t.created_at).toLocaleDateString()]));
+            } else {
+              exportCSV('transactions', ['Date','Type','Category','Amount','Description','User','Status'], transactions.map((t: any) => [fmt(t.created_at), t.type, t.category, t.amount, t.description || '', t.user_email || '', t.status]));
+            }
+          }} className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700">
+            <Download className="w-3 h-3" /> Export CSV
+          </button>
         </div>
         {isAccountant && tab==='transactions' && (
           <button onClick={()=>{setEditTx(null);setTxType('Cash In');setSelCat('');setAddModal(true);}} className="btn-primary">

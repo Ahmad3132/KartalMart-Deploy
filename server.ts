@@ -2250,6 +2250,108 @@ async function startServer() {
   });
 
   // ════════════════════════════════════════════
+  // DATABASE BACKUP
+  // ════════════════════════════════════════════
+  app.get('/api/admin/backup', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const backupPath = path.join(dataDir, `backup-${Date.now()}.db`);
+      db.backup(backupPath).then(() => {
+        res.download(backupPath, `kartal-backup-${new Date().toISOString().slice(0,10)}.db`, (err: any) => {
+          try { fs.unlinkSync(backupPath); } catch {}
+          if (err && !res.headersSent) res.status(500).json({ error: 'Download failed' });
+        });
+      }).catch((e: any) => res.status(500).json({ error: e.message }));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // DISCOUNT / COUPON SYSTEM
+  // ════════════════════════════════════════════
+  db.exec(`CREATE TABLE IF NOT EXISTS coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    discount_type TEXT NOT NULL DEFAULT 'percentage',
+    discount_value REAL NOT NULL,
+    min_amount REAL DEFAULT 0,
+    max_uses INTEGER DEFAULT 0,
+    used_count INTEGER DEFAULT 0,
+    valid_from DATETIME,
+    valid_until DATETIME,
+    status TEXT DEFAULT 'Active',
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  app.get('/api/coupons', authenticateToken, (req: any, res: any) => {
+    try { res.json(db.prepare('SELECT * FROM coupons ORDER BY created_at DESC').all()); }
+    catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/coupons', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const { code, discount_type, discount_value, min_amount, max_uses, valid_from, valid_until } = req.body;
+      if (!code || !discount_value) return res.status(400).json({ error: 'Code and discount value required' });
+      const result = db.prepare('INSERT INTO coupons (code, discount_type, discount_value, min_amount, max_uses, valid_from, valid_until, created_by) VALUES (?,?,?,?,?,?,?,?)')
+        .run(code.toUpperCase(), discount_type || 'percentage', discount_value, min_amount || 0, max_uses || 0, valid_from || null, valid_until || null, req.user.email);
+      res.json({ id: result.lastInsertRowid });
+    } catch (e: any) {
+      if (e.message?.includes('UNIQUE')) return res.status(400).json({ error: 'Coupon code already exists' });
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put('/api/coupons/:id', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try { db.prepare('UPDATE coupons SET status = ? WHERE id = ?').run(req.body.status, req.params.id); res.json({ success: true }); }
+    catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/coupons/:id', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try { db.prepare('DELETE FROM coupons WHERE id = ?').run(req.params.id); res.json({ success: true }); }
+    catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/coupons/validate', authenticateToken, (req: any, res: any) => {
+    try {
+      const { code, amount } = req.body;
+      if (!code) return res.status(400).json({ error: 'Coupon code required' });
+      const coupon = db.prepare("SELECT * FROM coupons WHERE code = ? AND status = 'Active'").get(code.toUpperCase()) as any;
+      if (!coupon) return res.status(404).json({ error: 'Invalid or expired coupon' });
+      if (coupon.max_uses > 0 && coupon.used_count >= coupon.max_uses) return res.status(400).json({ error: 'Usage limit reached' });
+      if (coupon.valid_until && new Date(coupon.valid_until) < new Date()) return res.status(400).json({ error: 'Coupon expired' });
+      if (coupon.valid_from && new Date(coupon.valid_from) > new Date()) return res.status(400).json({ error: 'Coupon not yet active' });
+      if (amount && coupon.min_amount > 0 && amount < coupon.min_amount) return res.status(400).json({ error: `Min amount PKR ${coupon.min_amount} required` });
+      let discount = coupon.discount_type === 'percentage' ? (amount || 0) * (coupon.discount_value / 100) : coupon.discount_value;
+      res.json({ valid: true, discount, coupon_id: coupon.id, discount_type: coupon.discount_type, discount_value: coupon.discount_value });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/coupons/:id/use', authenticateToken, (req: any, res: any) => {
+    try { db.prepare('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?').run(req.params.id); res.json({ success: true }); }
+    catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // CAMPAIGN COMPARISON
+  // ════════════════════════════════════════════
+  app.get('/api/stats/campaign-comparison', authenticateToken, (req: any, res: any) => {
+    try {
+      const campaigns = db.prepare(`
+        SELECT c.id, c.name, c.status,
+          COALESCE((SELECT COUNT(*) FROM transactions t WHERE t.campaign_id = c.id AND t.status = 'Generated'), 0) as total_transactions,
+          COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.campaign_id = c.id AND t.status = 'Generated'), 0) as total_revenue,
+          COALESCE((SELECT COUNT(*) FROM tickets tk JOIN transactions t ON tk.tx_id = t.tx_id WHERE t.campaign_id = c.id), 0) as total_tickets,
+          COALESCE((SELECT COUNT(DISTINCT t.user_email) FROM transactions t WHERE t.campaign_id = c.id AND t.status = 'Generated'), 0) as unique_agents
+        FROM campaigns c ORDER BY c.created_at DESC
+      `).all();
+      res.json(campaigns);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
   // DAILY SETTLEMENT / CLOSING
   // ════════════════════════════════════════════
 

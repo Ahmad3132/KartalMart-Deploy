@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Ticket, Settings, Package, CheckCircle, FileText,
   LogOut, Printer, Menu, X, Scan, Users, UserPlus, Clock, BarChart2,
-  DollarSign, ClipboardList, ListChecks, Banknote, Bell, RotateCcw, CalendarCheck, Receipt
+  DollarSign, ClipboardList, ListChecks, Banknote, Bell, RotateCcw, CalendarCheck, Receipt, Tag
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from '../components/Logo';
@@ -23,6 +23,7 @@ const allNavItems = [
   { name: 'Receipts',          path: '/admin/receipts',     icon: Receipt,       roles: ['Admin', 'Accountant'] },
   { name: 'Daily Settlement',  path: '/admin/settlement',   icon: CalendarCheck, roles: ['Admin'] },
   { name: 'Refunds',           path: '/admin/refunds',      icon: RotateCcw,     roles: ['Admin', 'Accountant'] },
+  { name: 'Coupons & Discounts', path: '/admin/coupons',      icon: Tag,          roles: ['Admin'] },
   { name: 'Salary & Loans',   path: '/admin/salary-loans', icon: Banknote,     roles: ['Admin', 'Accountant'] },
   { name: 'Audit Logs',       path: '/admin/audit',     icon: FileText,        roles: ['Admin'] },
   { name: 'Scanner',          path: '/admin/scanner',   icon: Scan,            roles: ['Admin'], feature: 'scanner_enabled' },
