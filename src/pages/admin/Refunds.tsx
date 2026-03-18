@@ -34,7 +34,7 @@ export default function Refunds() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const r = await fetch('/api/refunds', { method: 'POST', headers: h(), body: JSON.stringify({ ticket_id: parseInt(ticketId), reason }) });
+      const r = await fetch('/api/refunds', { method: 'POST', headers: h(), body: JSON.stringify({ ticket_id: ticketId.trim(), reason }) });
       const d = await r.json();
       if (r.ok) { toast(`Refund ${d.status === 'Approved' ? 'processed' : 'submitted for approval'}!`); setShowCreate(false); setTicketId(''); setReason(''); load(); }
       else toast(d.error || 'Failed', true);
@@ -96,7 +96,7 @@ export default function Refunds() {
                refunds.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-mono text-xs">#{r.id}</td>
-                  <td className="px-4 py-3 font-medium">#{r.ticket_id}</td>
+                  <td className="px-4 py-3 font-medium font-mono">{r.display_ticket_id || r.ticket_id}</td>
                   <td className="px-4 py-3 text-gray-600">{r.customer_name || '-'}</td>
                   <td className="px-4 py-3 font-semibold text-red-600">PKR {(r.amount || 0).toLocaleString()}</td>
                   <td className="px-4 py-3 text-gray-500 max-w-[200px] truncate">{r.reason}</td>
@@ -138,9 +138,9 @@ export default function Refunds() {
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Ticket ID (database ID)</label>
-                <input type="number" value={ticketId} onChange={e => setTicketId(e.target.value)} required min="1"
-                  placeholder="Enter ticket database ID" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Ticket Number</label>
+                <input type="text" value={ticketId} onChange={e => setTicketId(e.target.value)} required
+                  placeholder="e.g. 2603-0001" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-mono" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Reason for Refund</label>

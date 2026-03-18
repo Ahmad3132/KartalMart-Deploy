@@ -334,6 +334,8 @@ const migrations = [
   { table: 'transactions', column: 'step1_completed_at', type: 'DATETIME' },
   { table: 'users', column: 'accounts_enabled', type: 'INTEGER DEFAULT 0' },
   { table: 'users', column: 'reprint_enabled', type: 'INTEGER DEFAULT 0' },
+  { table: 'tickets', column: 'status', type: "TEXT DEFAULT 'Active'" },
+  { table: 'campaigns', column: 'created_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
 ];
 
 for (const m of migrations) {
@@ -514,7 +516,27 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.put('/api/users/:email', authenticateToken, (req, res) => {
+  // Profile update — MUST be before /api/users/:email to avoid route shadowing
+  app.put('/api/users/profile', authenticateToken, upload.single('profile_picture'), (req: any, res: any) => {
+    const { name, nick_name, bio } = req.body;
+    const email = req.user.email;
+    const profile_picture = req.file ? `/uploads/${req.file.filename}` : undefined;
+
+    if (profile_picture) {
+      db.prepare('UPDATE users SET name = ?, nick_name = ?, bio = ?, profile_picture = ? WHERE email = ?')
+        .run(name, nick_name, bio, profile_picture, email);
+    } else {
+      db.prepare('UPDATE users SET name = ?, nick_name = ?, bio = ? WHERE email = ?')
+        .run(name, nick_name, bio, email);
+    }
+    res.json({ success: true });
+  });
+
+  app.put('/api/users/:email', authenticateToken, (req: any, res: any) => {
+    // Only Admin can modify other users
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only admins can modify users' });
+    }
     const { email } = req.params;
     const body = req.body;
 
@@ -552,7 +574,8 @@ async function startServer() {
       values.push(body.custom_role_id);
     }
 
-    if (body.password) {
+    // Only update password if non-empty string provided (skip blank passwords)
+    if (body.password && typeof body.password === 'string' && body.password.trim().length >= 6) {
       updates.push('password = ?');
       values.push(bcrypt.hashSync(body.password, 10));
     }
@@ -566,7 +589,11 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.delete('/api/users/:email', authenticateToken, (req, res) => {
+  app.delete('/api/users/:email', authenticateToken, (req: any, res: any) => {
+    // Only Admin can delete users
+    if (req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Only admins can delete users' });
+    }
     const { email } = req.params;
     db.prepare('DELETE FROM users WHERE email = ?').run(email);
     res.json({ success: true });
@@ -1524,21 +1551,6 @@ async function startServer() {
     res.json({ stats, totalCount, totalPages: Math.ceil(totalCount / Number(limit)) });
   });
 
-  app.put('/api/users/profile', authenticateToken, upload.single('profile_picture'), (req: any, res: any) => {
-    const { name, nick_name, bio } = req.body;
-    const email = req.user.email;
-    const profile_picture = req.file ? `/uploads/${req.file.filename}` : undefined;
-
-    if (profile_picture) {
-      db.prepare('UPDATE users SET name = ?, nick_name = ?, bio = ?, profile_picture = ? WHERE email = ?')
-        .run(name, nick_name, bio, profile_picture, email);
-    } else {
-      db.prepare('UPDATE users SET name = ?, nick_name = ?, bio = ? WHERE email = ?')
-        .run(name, nick_name, bio, email);
-    }
-    res.json({ success: true });
-  });
-
   app.get('/api/admin/stats/graphs', authenticateToken, (req, res) => {
     try {
       // Revenue Trend (Last 30 Days)
@@ -2102,11 +2114,11 @@ async function startServer() {
              req.user.email);
 
       // Auto-create account transaction for Admin-approved salary/advance
+      // user_email = the employee receiving salary, created_by = admin who processed it
       if (status === 'Approved') {
-        const cat = type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
         const acctType = type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
         db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES (?, ?, ?, ?, ?, date('now'), ?, 'Approved', 'System', ?)`)
-          .run(acctType, amount, type === 'Loan Repayment' ? 'Other Income' : 'Salaries', type, `${type}: ${description || user_email}${month ? ' (' + month + ')' : ''}`, req.user.email, req.user.email);
+          .run(acctType, amount, type === 'Loan Repayment' ? 'Other Income' : 'Salaries', type, `${type}: ${description || user_email}${month ? ' (' + month + ')' : ''}`, req.user.email, user_email);
       }
       res.json({ success: true, id: result.lastInsertRowid });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -2122,10 +2134,10 @@ async function startServer() {
     db.prepare("UPDATE salary_transactions SET status = 'Approved', approved_by = ?, approved_at = datetime('now') WHERE id = ?")
       .run(req.user.email, req.params.id);
 
-    // Create corresponding account transaction
+    // Create corresponding account transaction — attribute to employee (tx.user_email), not admin
     const acctType = tx.type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
     db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES (?, ?, ?, ?, ?, date('now'), ?, 'Approved', 'System', ?)`)
-      .run(acctType, tx.amount, tx.type === 'Loan Repayment' ? 'Other Income' : 'Salaries', tx.type, `${tx.type}: ${tx.description || tx.user_email}${tx.month ? ' (' + tx.month + ')' : ''}`, req.user.email, req.user.email);
+      .run(acctType, tx.amount, tx.type === 'Loan Repayment' ? 'Other Income' : 'Salaries', tx.type, `${tx.type}: ${tx.description || tx.user_email}${tx.month ? ' (' + tx.month + ')' : ''}`, req.user.email, tx.user_email);
 
     // Auto-generate receipt for salary transaction
     try {
@@ -2390,7 +2402,7 @@ async function startServer() {
           COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.campaign_id = c.id AND t.status = 'Generated'), 0) as total_revenue,
           COALESCE((SELECT COUNT(*) FROM tickets tk JOIN transactions t ON tk.tx_id = t.tx_id WHERE t.campaign_id = c.id), 0) as total_tickets,
           COALESCE((SELECT COUNT(DISTINCT t.user_email) FROM transactions t WHERE t.campaign_id = c.id AND t.status = 'Generated'), 0) as unique_agents
-        FROM campaigns c ORDER BY c.created_at DESC
+        FROM campaigns c ORDER BY c.id DESC
       `).all();
       res.json(campaigns);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -2481,42 +2493,49 @@ async function startServer() {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  // GET refunds
+  // GET refunds — join by ticket_id (display ID), use t.name not t.customer_name
   app.get('/api/refunds', authenticateToken, (req: any, res: any) => {
     try {
-      const rows = db.prepare('SELECT r.*, t.customer_name, t.mobile FROM refunds r LEFT JOIN tickets t ON r.ticket_id = t.id ORDER BY r.created_at DESC').all();
+      const rows = db.prepare(`
+        SELECT r.*, t.name as customer_name, t.mobile, t.ticket_id as display_ticket_id
+        FROM refunds r LEFT JOIN tickets t ON r.ticket_id = t.ticket_id
+        ORDER BY r.created_at DESC
+      `).all();
       res.json(rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // CREATE refund request
+  // CREATE refund request — search by display ticket_id (e.g. "2603-0001"), not integer id
   app.post('/api/refunds', authenticateToken, (req: any, res: any) => {
     try {
       const { ticket_id, reason } = req.body;
       if (!ticket_id || !reason) return res.status(400).json({ error: 'Ticket ID and reason required' });
 
-      // Check ticket exists
-      const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(ticket_id) as any;
-      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+      // Search by display ticket_id (human-readable)
+      const ticket = db.prepare('SELECT * FROM tickets WHERE ticket_id = ?').get(String(ticket_id)) as any;
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found. Enter the ticket number shown on the ticket (e.g. 2603-0001).' });
 
       // Check if already refunded
-      const existingRefund = db.prepare("SELECT id FROM refunds WHERE ticket_id = ? AND status != 'Rejected'").get(ticket_id) as any;
+      const existingRefund = db.prepare("SELECT id FROM refunds WHERE ticket_id = ? AND status != 'Rejected'").get(ticket.ticket_id) as any;
       if (existingRefund) return res.status(400).json({ error: 'Refund already exists for this ticket' });
 
+      // Check if ticket is already cancelled
+      if (ticket.status === 'Cancelled') return res.status(400).json({ error: 'Ticket is already cancelled' });
+
       // Get amount from transaction
-      const tx = db.prepare("SELECT amount FROM transactions WHERE tx_id = ?").get(ticket.tx_id) as any;
-      const amount = tx?.amount || 0;
+      const tx = db.prepare("SELECT amount, ticket_count FROM transactions WHERE tx_id = ?").get(ticket.tx_id) as any;
+      const amount = tx ? Math.round(tx.amount / (tx.ticket_count || 1)) : 0;
 
       const status = req.user.role === 'Admin' ? 'Approved' : 'Pending';
       const result = db.prepare('INSERT INTO refunds (ticket_id, transaction_id, amount, reason, status, refunded_by, approved_by) VALUES (?,?,?,?,?,?,?)')
-        .run(ticket_id, ticket.tx_id, amount, reason, status, req.user.email, status === 'Approved' ? req.user.email : null);
+        .run(ticket.ticket_id, ticket.tx_id, amount, reason, status, req.user.email, status === 'Approved' ? req.user.email : null);
 
       // If auto-approved (admin), cancel ticket and reverse cash
       if (status === 'Approved') {
-        db.prepare("UPDATE tickets SET status = 'Cancelled' WHERE id = ?").run(ticket_id);
-        // Create reverse cash entry
-        db.prepare("INSERT INTO account_transactions (user_email, type, amount, category, description, status) VALUES (?,?,?,?,?,?)")
-          .run(req.user.email, 'Cash Out', amount, 'Refund', `Refund for ticket #${ticket.ticket_id} - ${reason}`, 'Approved');
+        db.prepare("UPDATE tickets SET status = 'Cancelled' WHERE ticket_id = ?").run(ticket.ticket_id);
+        db.prepare(`INSERT INTO account_transactions (user_email, type, amount, category, subcategory, description, date, created_by, status, source)
+          VALUES (?, 'Cash Out', ?, 'Refund', 'Ticket Refund', ?, date('now'), ?, 'Approved', 'System')`)
+          .run(ticket.user_email, amount, `Refund for ticket #${ticket.ticket_id} - ${reason}`, req.user.email);
       }
 
       db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)')
@@ -2536,12 +2555,16 @@ async function startServer() {
 
       db.prepare("UPDATE refunds SET status = 'Approved', approved_by = ? WHERE id = ?").run(req.user.email, refund.id);
 
-      // Cancel ticket
-      db.prepare("UPDATE tickets SET status = 'Cancelled' WHERE id = ?").run(refund.ticket_id);
+      // Cancel ticket — use display ticket_id
+      db.prepare("UPDATE tickets SET status = 'Cancelled' WHERE ticket_id = ?").run(refund.ticket_id);
 
-      // Reverse cash entry
-      db.prepare("INSERT INTO account_transactions (user_email, type, amount, category, description, status) VALUES (?,?,?,?,?,?)")
-        .run(refund.refunded_by, 'Cash Out', refund.amount, 'Refund', `Refund approved for ticket #${refund.ticket_id}`, 'Approved');
+      // Get ticket info for proper attribution
+      const ticket = db.prepare('SELECT * FROM tickets WHERE ticket_id = ?').get(refund.ticket_id) as any;
+
+      // Reverse cash entry with all required fields
+      db.prepare(`INSERT INTO account_transactions (user_email, type, amount, category, subcategory, description, date, created_by, status, source)
+        VALUES (?, 'Cash Out', ?, 'Refund', 'Ticket Refund', ?, date('now'), ?, 'Approved', 'System')`)
+        .run(ticket?.user_email || refund.refunded_by, refund.amount, `Refund approved for ticket #${refund.ticket_id}`, req.user.email);
 
       db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)')
         .run('Refund Approved', `Refund #${refund.id} for ticket #${refund.ticket_id}`, req.user.email);
@@ -2691,15 +2714,15 @@ async function startServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // Mark notification as read
-  app.put('/api/notifications/:id/read', authenticateToken, (req: any, res: any) => {
-    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_email = ?').run(req.params.id, req.user.email);
+  // Mark all as read — MUST be before :id/read to avoid route shadowing
+  app.put('/api/notifications/read-all', authenticateToken, (req: any, res: any) => {
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE user_email = ?').run(req.user.email);
     res.json({ success: true });
   });
 
-  // Mark all as read
-  app.put('/api/notifications/read-all', authenticateToken, (req: any, res: any) => {
-    db.prepare('UPDATE notifications SET is_read = 1 WHERE user_email = ?').run(req.user.email);
+  // Mark single notification as read
+  app.put('/api/notifications/:id/read', authenticateToken, (req: any, res: any) => {
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_email = ?').run(req.params.id, req.user.email);
     res.json({ success: true });
   });
 

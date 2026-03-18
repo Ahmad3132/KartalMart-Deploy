@@ -110,7 +110,8 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
     <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">TX ID:</span><span style="font-family:monospace;font-size:8px;">${ticket.tx_id}</span></div>
     <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Date:</span><span style="font-size:8px;">${date} ${time}</span></div>
     <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Ticket:</span><span style="font-size:8px;">${ticket.person_ticket_index} of ${ticket.total_tickets_in_tx}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Agent:</span><span style="font-size:8px;">${ticket.generated_by_nick || ticket.generated_by}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Gen. by:</span><span style="font-size:8px;">${ticket.generated_by_nick || ticket.generated_by}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Print by:</span><span style="font-size:8px;">${ticket.last_printed_by_nick || ticket.generated_by_nick || ''}</span></div>
   </div>
 
   ${qrEnabled ? `<div class="qr-container" style="text-align:center;margin:1.5mm 0;">

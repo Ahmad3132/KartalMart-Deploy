@@ -114,7 +114,10 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
           <Row label="TX ID" value={ticket.tx_id} mono />
           <Row label="Date" value={`${date}  ${time}`} />
           <Row label="Ticket" value={`${ticket.person_ticket_index} of ${ticket.total_tickets_in_tx}`} />
-          <Row label="Agent" value={ticket.generated_by_nick || ticket.generated_by} small />
+          <Row label="Gen. by" value={ticket.generated_by_nick || ticket.generated_by || ''} small />
+          {ticket.last_printed_by_nick && (
+            <Row label="Print by" value={ticket.last_printed_by_nick} small />
+          )}
         </div>
 
         {/* ---- QR CODE (conditional) ---- */}
