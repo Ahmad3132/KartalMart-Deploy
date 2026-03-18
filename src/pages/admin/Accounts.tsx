@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X, Check, AlertCircle, TrendingUp, TrendingDown, DollarSign,
-  Filter, Download, Edit2, Trash2, Clock, ChevronDown, BarChart2, Search, Users, ArrowLeftRight, Send } from 'lucide-react';
+  Filter, Download, Edit2, Trash2, Clock, ChevronDown, BarChart2, Search, Users, ArrowLeftRight, Send, Printer } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { exportCSV } from '../../utils/exportCSV';
 
@@ -8,6 +8,67 @@ const h  = () => ({ 'Authorization': `Bearer ${localStorage.getItem('kartal_toke
 const hj = () => ({ ...h(), 'Content-Type': 'application/json' });
 const PKR = (n:number) => `PKR ${Number(n||0).toLocaleString('en-PK')}`;
 const fmt = (d:string) => new Date(d).toLocaleDateString('en-PK',{day:'2-digit',month:'short',year:'numeric'});
+
+// Auto-generate receipt and print it
+async function generateAndPrintReceipt(type: 'account_tx' | 'transfer' | 'salary', id: number) {
+  try {
+    const endpoint = type === 'transfer' ? `/api/receipts/from-transfer/${id}`
+      : type === 'salary' ? `/api/receipts/from-salary/${id}`
+      : `/api/receipts/from-account-tx/${id}`;
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
+    if (!res.ok) { alert('Failed to generate receipt'); return; }
+    const data = await res.json();
+    // Fetch full receipt
+    const rRes = await fetch(`/api/receipts/${data.id}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
+    if (!rRes.ok) { alert('Failed to load receipt'); return; }
+    const receipt = await rRes.json();
+    printReceipt(receipt);
+  } catch { alert('Receipt generation failed'); }
+}
+
+function printReceipt(r: any) {
+  const w = window.open('', '_blank', 'width=350,height=600');
+  if (!w) return;
+  const date = new Date(r.created_at).toLocaleString('en-PK', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${r.receipt_number}</title>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family: 'Courier New', monospace; width:80mm; margin:0 auto; padding:8mm 5mm; font-size:11px; color:#000; }
+      .center { text-align:center; }
+      .bold { font-weight:bold; }
+      .divider { border-top:1px dashed #999; margin:6px 0; }
+      .row { display:flex; justify-content:space-between; padding:2px 0; }
+      .row .label { color:#555; }
+      .row .value { font-weight:bold; text-align:right; }
+      h2 { font-size:16px; margin-bottom:2px; }
+      .amount { font-size:18px; font-weight:900; margin:8px 0; }
+      @media print { body { margin:0; padding:5mm 3mm; } }
+    </style></head><body>
+    <div class="center">
+      <h2>KARTAL MART</h2>
+      <p style="font-size:9px;color:#666;">Group of Companies</p>
+      <div class="divider"></div>
+      <p class="bold" style="font-size:13px;margin:4px 0;">RECEIPT</p>
+      <p style="font-size:10px;color:#888;">${r.receipt_number}</p>
+    </div>
+    <div class="divider"></div>
+    <div class="row"><span class="label">Date:</span><span class="value">${date}</span></div>
+    <div class="row"><span class="label">Type:</span><span class="value">${r.type || '—'}</span></div>
+    <div class="row"><span class="label">From:</span><span class="value">${(r.from_party || '—').split('@')[0]}</span></div>
+    <div class="row"><span class="label">To:</span><span class="value">${(r.to_party || '—').split('@')[0]}</span></div>
+    <div class="divider"></div>
+    <div class="center amount">PKR ${Number(r.amount||0).toLocaleString('en-PK')}</div>
+    <div class="divider"></div>
+    ${r.description ? `<p style="font-size:10px;color:#555;margin:4px 0;"><b>Note:</b> ${r.description}</p>` : ''}
+    <div class="row"><span class="label">Method:</span><span class="value">${r.payment_method || 'Cash'}</span></div>
+    <div class="row"><span class="label">Created by:</span><span class="value">${(r.created_by || '').split('@')[0]}</span></div>
+    <div class="divider"></div>
+    <p class="center" style="font-size:9px;color:#999;margin-top:8px;">This is a computer generated receipt.</p>
+    <p class="center" style="font-size:9px;color:#999;">Thank you for your business!</p>
+    <script>window.onload=function(){window.print();}</script>
+  </body></html>`);
+  w.document.close();
+}
 
 type Tx = { id:number; type:'Cash In'|'Cash Out'; amount:number; category:string; subcategory:string;
   description:string; date:string; created_by:string; status:'Pending'|'Approved'|'Rejected';
@@ -164,7 +225,7 @@ export default function Accounts() {
     setCatModal(false); setEditCat(null); load(); toast('Category saved!');
   }
 
-  function exportCSV() {
+  function exportAccountsCSV() {
     const rows = [['Date','Type','Category','Subcategory','Amount','Description','Status','Created By','Source']];
     filtered.forEach(t=>rows.push([t.date,t.type,t.category,t.subcategory||'',String(t.amount),t.description,t.status,t.created_by,t.source]));
     const csv = rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
@@ -318,7 +379,7 @@ export default function Accounts() {
               <input type="date" value={fDateFrom} onChange={e=>setFDateFrom(e.target.value)} className="field py-2 text-xs" placeholder="From"/>
               <div className="flex gap-2">
                 <input type="date" value={fDateTo} onChange={e=>setFDateTo(e.target.value)} className="field py-2 text-xs flex-1" placeholder="To"/>
-                {isAdmin && <button onClick={exportCSV} className="btn-secondary py-2 px-3 text-xs whitespace-nowrap"><Download className="w-4 h-4"/></button>}
+                {isAdmin && <button onClick={exportAccountsCSV} className="btn-secondary py-2 px-3 text-xs whitespace-nowrap"><Download className="w-4 h-4"/></button>}
               </div>
             </div>
           </div>
@@ -434,8 +495,9 @@ export default function Accounts() {
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadge(t.status)}`}>{t.status}</span>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
                           {isAdmin && t.status==='Pending' && (
-                            <div className="flex items-center gap-1.5">
+                            <>
                               <button onClick={async()=>{
                                 const res=await fetch(`/api/accounts/transfers/${t.id}/approve`,{method:'PUT',headers:hj()});
                                 if(res.ok){load();toast('Transfer approved!');}else{const d=await res.json();toast(d.error||'Failed',true);}
@@ -446,8 +508,12 @@ export default function Accounts() {
                                 const res=await fetch(`/api/accounts/transfers/${t.id}/reject`,{method:'PUT',headers:hj(),body:JSON.stringify({reason})});
                                 if(res.ok){load();toast('Transfer rejected.');}else{const d=await res.json();toast(d.error||'Failed',true);}
                               }} className="text-red-500 hover:text-red-600" title="Reject"><X className="w-4 h-4"/></button>
-                            </div>
+                            </>
                           )}
+                          {t.status==='Approved' && (
+                            <button onClick={()=>generateAndPrintReceipt('transfer', t.id)} className="text-gray-400 hover:text-indigo-600" title="Print Receipt"><Printer className="w-4 h-4"/></button>
+                          )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -557,7 +623,7 @@ export default function Accounts() {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-50 flex items-center justify-between">
                 <h3 className="font-bold text-gray-900">Full Transaction History</h3>
-                <button onClick={exportCSV} className="btn-secondary text-xs"><Download className="w-4 h-4 mr-1.5"/>Export CSV</button>
+                <button onClick={exportAccountsCSV} className="btn-secondary text-xs"><Download className="w-4 h-4 mr-1.5"/>Export CSV</button>
               </div>
               <TxTable rows={approved} isAdmin={isAdmin} isAccountant={isAccountant}
                 onApprove={approveTx} onReject={t=>{setRejectModal(t);setRejectReason('');}} onDelete={deleteTx}
@@ -784,6 +850,9 @@ function TxTable({ rows, isAdmin, isAccountant, onApprove, onReject, onDelete, o
                   )}
                   {isAdmin && t.status!=='Approved' && (
                     <button onClick={()=>onDelete(t.id)} className="text-gray-300 hover:text-red-500" title="Delete"><Trash2 className="w-4 h-4"/></button>
+                  )}
+                  {t.status==='Approved' && (
+                    <button onClick={()=>generateAndPrintReceipt('account_tx', t.id)} className="text-gray-400 hover:text-indigo-600" title="Print Receipt"><Printer className="w-4 h-4"/></button>
                   )}
                 </div>
               </td>

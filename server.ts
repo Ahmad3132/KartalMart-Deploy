@@ -1826,6 +1826,20 @@ async function startServer() {
     db.prepare("UPDATE account_transactions SET status='Approved', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?")
       .run(req.user.email, req.params.id);
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run('Approve Account TX', `Transaction ${req.params.id} approved`, req.user.email);
+    // Auto-generate receipt
+    try {
+      const tx = db.prepare('SELECT * FROM account_transactions WHERE id=?').get(req.params.id) as any;
+      if (tx) {
+        const existing = db.prepare("SELECT id FROM receipts WHERE reference_type='account_tx' AND reference_id=?").get(tx.id) as any;
+        if (!existing) {
+          const rn = getNextReceiptNumber();
+          const from = tx.type === 'Cash In' ? (tx.description || 'External') : 'Company';
+          const to = tx.type === 'Cash In' ? 'Company' : (tx.description || 'External');
+          db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            .run(rn, tx.type, 'account_tx', tx.id, from, to, tx.amount, tx.description || `${tx.type} - ${tx.category}`, 'Cash', req.user.email);
+        }
+      }
+    } catch {}
     res.json({ success: true });
   });
 
@@ -1928,6 +1942,15 @@ async function startServer() {
         .run(transfer.amount, `Cash transfer from ${transfer.from_user}`, transfer.from_user, req.user.email, transfer.to_user);
     })();
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Approve Transfer', `Transfer ${req.params.id} approved`, req.user.email);
+    // Auto-generate receipt for transfer
+    try {
+      const existing = db.prepare("SELECT id FROM receipts WHERE reference_type='transfer' AND reference_id=?").get(transfer.id) as any;
+      if (!existing) {
+        const rn = getNextReceiptNumber();
+        db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(rn, 'Cash Transfer', 'transfer', transfer.id, transfer.from_user, transfer.to_user, transfer.amount, transfer.description || 'Cash transfer', 'Cash', req.user.email);
+      }
+    } catch {}
     res.json({ success: true });
   });
 
@@ -2091,6 +2114,16 @@ async function startServer() {
     const acctType = tx.type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
     db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES (?, ?, ?, ?, ?, date('now'), ?, 'Approved', 'System', ?)`)
       .run(acctType, tx.amount, tx.type === 'Loan Repayment' ? 'Other Income' : 'Salaries', tx.type, `${tx.type}: ${tx.description || tx.user_email}${tx.month ? ' (' + tx.month + ')' : ''}`, req.user.email, req.user.email);
+
+    // Auto-generate receipt for salary transaction
+    try {
+      const existing = db.prepare("SELECT id FROM receipts WHERE reference_type='salary' AND reference_id=?").get(tx.id) as any;
+      if (!existing) {
+        const rn = getNextReceiptNumber();
+        db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(rn, tx.type === 'Salary' ? 'Salary Payment' : tx.type, 'salary', tx.id, 'Company', tx.user_email, tx.amount, `${tx.type}${tx.month ? ' (' + tx.month + ')' : ''}`, 'Cash', req.user.email);
+      }
+    } catch {}
 
     res.json({ success: true });
   });

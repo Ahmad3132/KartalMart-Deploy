@@ -62,7 +62,7 @@ export default function Settings() {
     finally { setLoading(false); }
   }
 
-  function toast(msg: string) { setSuccess(msg); setTimeout(()=>setSuccess(''),3000); }
+  function toast(msg: string, isError?: boolean) { if(isError){setError(msg);setTimeout(()=>setError(''),3000);} else {setSuccess(msg);setTimeout(()=>setSuccess(''),3000);} }
 
   async function toggle(key: string) {
     const val = settings[key]==='true' ? 'false' : 'true';

@@ -20,7 +20,6 @@ const allNavItems = [
   { name: 'Reports',          path: '/admin/reports',   icon: BarChart2,       roles: ['Admin', 'Accountant'], feature: 'reports_enabled' },
   { name: 'Accounts',         path: '/admin/accounts',  icon: DollarSign,      roles: ['Admin', 'Accountant'] },
   { name: 'Invoices',          path: '/admin/invoices',     icon: FileText,     roles: ['Admin', 'Accountant'] },
-  { name: 'Receipts',          path: '/admin/receipts',     icon: Receipt,       roles: ['Admin', 'Accountant'] },
   { name: 'Daily Settlement',  path: '/admin/settlement',   icon: CalendarCheck, roles: ['Admin'] },
   { name: 'Refunds',           path: '/admin/refunds',      icon: RotateCcw,     roles: ['Admin', 'Accountant'] },
   { name: 'Coupons & Discounts', path: '/admin/coupons',      icon: Tag,          roles: ['Admin'] },
