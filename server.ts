@@ -260,6 +260,36 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'info',
+    link TEXT,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS login_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL,
+    action TEXT NOT NULL DEFAULT 'login',
+    ip_address TEXT,
+    user_agent TEXT,
+    success INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS customer_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mobile TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(mobile, tag)
+  );
 `);
 
 // Migration: Add missing columns if they don't exist (for existing databases)
@@ -654,23 +684,30 @@ async function startServer() {
   });
 
   // Auth
-  app.post('/api/login', (req, res) => {
+  app.post('/api/login', (req: any, res) => {
     const { email, password } = req.body;
+    const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '';
+    const ua = req.headers['user-agent'] || '';
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
-    
+
     if (!user || !bcrypt.compareSync(password, user.password)) {
+      // Log failed login
+      try { db.prepare('INSERT INTO login_logs (user_email, action, ip_address, user_agent, success) VALUES (?, ?, ?, ?, 0)').run(email || 'unknown', 'login', ip, ua); } catch {}
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     if (user.status !== 'Active') {
       return res.status(403).json({ error: 'Account is disabled' });
     }
-    
+
+    // Log successful login
+    try { db.prepare('INSERT INTO login_logs (user_email, action, ip_address, user_agent, success) VALUES (?, ?, ?, ?, 1)').run(email, 'login', ip, ua); } catch {}
+
     const token = jwt.sign({ email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ 
-      token, 
-      email: user.email, 
-      role: user.role, 
-      name: user.name, 
+    res.json({
+      token,
+      email: user.email,
+      role: user.role,
+      name: user.name,
       nick_name: user.nick_name,
       whatsapp_redirect_enabled: user.whatsapp_redirect_enabled === 1
     });
@@ -992,8 +1029,13 @@ async function startServer() {
         } catch (accErr) {
           console.error('Account TX creation failed (non-critical):', accErr);
         }
+
+        // Notify the user who created the transaction
+        try {
+          createNotification(tx.user_email, 'Transaction Approved', `Your transaction ${tx.tx_id} has been approved and tickets generated.`, 'success', '/user/tickets');
+        } catch {}
       })();
-      
+
       res.json({ success: true });
     } catch (err: any) {
       console.error('Approval error:', err);
@@ -1849,6 +1891,11 @@ async function startServer() {
         .run(amount, `Cash transfer from ${from_user}`, from_user, u.email, to_user);
     }
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Cash Transfer', `PKR ${amount} from ${from_user} to ${to_user} [${status}]`, u.email);
+    // Notifications
+    try {
+      if (status === 'Pending') { notifyAdmins('Cash Transfer Request', `${from_user} requested PKR ${amount} transfer to ${to_user}`, 'warning', '/admin/accounts'); }
+      createNotification(to_user, 'Cash Received', `PKR ${amount} transferred from ${from_user}`, 'success', '');
+    } catch {}
     res.json({ id: r.lastInsertRowid, status });
   });
 
@@ -2184,6 +2231,129 @@ async function startServer() {
       if (inv.status !== 'Draft') return res.status(400).json({ error: 'Only draft invoices can be deleted' });
       db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
       res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // NOTIFICATION SYSTEM
+  // ════════════════════════════════════════════
+
+  // Helper to create notifications
+  function createNotification(userEmail: string, title: string, message: string, type: string = 'info', link: string = '') {
+    db.prepare('INSERT INTO notifications (user_email, title, message, type, link) VALUES (?, ?, ?, ?, ?)').run(userEmail, title, message, type, link);
+  }
+  function notifyAdmins(title: string, message: string, type: string = 'info', link: string = '') {
+    const admins = db.prepare("SELECT email FROM users WHERE role='Admin' AND status='Active'").all() as any[];
+    admins.forEach((a: any) => createNotification(a.email, title, message, type, link));
+  }
+
+  // GET notifications for current user
+  app.get('/api/notifications', authenticateToken, (req: any, res: any) => {
+    try {
+      const notifications = db.prepare('SELECT * FROM notifications WHERE user_email = ? ORDER BY created_at DESC LIMIT 50').all(req.user.email);
+      const unread = (db.prepare('SELECT count(*) as c FROM notifications WHERE user_email = ? AND is_read = 0').get(req.user.email) as any)?.c || 0;
+      res.json({ notifications, unread });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Mark notification as read
+  app.put('/api/notifications/:id/read', authenticateToken, (req: any, res: any) => {
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_email = ?').run(req.params.id, req.user.email);
+    res.json({ success: true });
+  });
+
+  // Mark all as read
+  app.put('/api/notifications/read-all', authenticateToken, (req: any, res: any) => {
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE user_email = ?').run(req.user.email);
+    res.json({ success: true });
+  });
+
+  // ════════════════════════════════════════════
+  // LOGIN LOGGING & AUDIT
+  // ════════════════════════════════════════════
+
+  // GET login logs (Admin only)
+  app.get('/api/audit/login-logs', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const { email, page = '1' } = req.query;
+      const limit = 50;
+      const offset = (parseInt(page as string) - 1) * limit;
+      let where = '1=1';
+      const params: any[] = [];
+      if (email) { where += ' AND user_email = ?'; params.push(email); }
+      const logs = db.prepare(`SELECT * FROM login_logs WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+      const total = (db.prepare(`SELECT count(*) as c FROM login_logs WHERE ${where}`).get(...params) as any)?.c || 0;
+      res.json({ logs, total });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // CUSTOMER LOYALTY / TAGS
+  // ════════════════════════════════════════════
+
+  // GET customer history (purchases across campaigns)
+  app.get('/api/customers/:mobile/history', authenticateToken, (req: any, res: any) => {
+    try {
+      const mobile = req.params.mobile;
+      const tickets = db.prepare(`
+        SELECT t.*, tk.ticket_id, tk.date as ticket_date, c.name as campaign_name
+        FROM tickets tk
+        LEFT JOIN transactions t ON tk.tx_id = t.tx_id
+        LEFT JOIN campaigns c ON t.campaign_id = c.id
+        WHERE tk.mobile LIKE ?
+        ORDER BY tk.date DESC
+      `).all(`%${mobile.replace(/\D/g, '').slice(-10)}%`);
+
+      const totalSpent = tickets.reduce((s: number, t: any) => s + (t.amount || 0), 0);
+      const campaignCount = new Set(tickets.map((t: any) => t.campaign_name).filter(Boolean)).size;
+
+      // Tags
+      const tags = db.prepare('SELECT * FROM customer_tags WHERE mobile = ?').all(mobile);
+
+      res.json({ tickets, totalSpent, totalTickets: tickets.length, campaignCount, tags, isRepeat: tickets.length > 1 });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Add customer tag
+  app.post('/api/customers/:mobile/tags', authenticateToken, (req: any, res: any) => {
+    try {
+      const { tag } = req.body;
+      if (!tag) return res.status(400).json({ error: 'Tag required' });
+      db.prepare('INSERT OR IGNORE INTO customer_tags (mobile, tag, created_by) VALUES (?, ?, ?)').run(req.params.mobile, tag, req.user.email);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Remove customer tag
+  app.delete('/api/customers/:mobile/tags/:tag', authenticateToken, (req: any, res: any) => {
+    try {
+      db.prepare('DELETE FROM customer_tags WHERE mobile = ? AND tag = ?').run(req.params.mobile, req.params.tag);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET repeat/VIP customers
+  app.get('/api/customers/loyalty/summary', authenticateToken, (req: any, res: any) => {
+    try {
+      const customers = db.prepare(`
+        SELECT mobile, name, count(*) as ticket_count, sum(t.amount) as total_spent,
+               max(tk.date) as last_purchase, min(tk.date) as first_purchase
+        FROM tickets tk
+        LEFT JOIN transactions t ON tk.tx_id = t.tx_id
+        GROUP BY mobile
+        HAVING ticket_count > 0
+        ORDER BY ticket_count DESC
+        LIMIT 100
+      `).all();
+
+      // Add tags
+      const result = (customers as any[]).map((c: any) => {
+        const tags = db.prepare('SELECT tag FROM customer_tags WHERE mobile = ?').all(c.mobile).map((t: any) => t.tag);
+        return { ...c, tags, isVIP: tags.includes('VIP'), isRepeat: c.ticket_count > 1 };
+      });
+
+      res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
