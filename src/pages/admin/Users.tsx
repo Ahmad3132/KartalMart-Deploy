@@ -20,6 +20,7 @@ export default function Users() {
     bulk_print_enabled: true,
     reports_enabled: true,
     accounts_enabled: false,
+    reprint_enabled: false,
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: string; text: string } | null>(null);
@@ -51,6 +52,7 @@ export default function Users() {
     bulk_print_enabled: true,
     reports_enabled: true,
     accounts_enabled: false,
+    reprint_enabled: false,
   });
 
   const save = async () => {
@@ -96,6 +98,7 @@ export default function Users() {
       bulk_print_enabled: u.bulk_print_enabled !== 0,
       reports_enabled: u.reports_enabled !== 0,
       accounts_enabled: u.accounts_enabled === 1,
+      reprint_enabled: u.reprint_enabled === 1,
     });
     setShowForm(true);
   };
@@ -127,6 +130,7 @@ export default function Users() {
     { key: 'bulk_print_enabled', label: 'Bulk Print' },
     { key: 'reports_enabled', label: 'Reports' },
     { key: 'accounts_enabled', label: 'Accounts' },
+    { key: 'reprint_enabled', label: 'Reprint Tickets' },
   ];
 
   const filtered = users.filter(u =>

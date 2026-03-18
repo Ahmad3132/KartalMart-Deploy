@@ -24,7 +24,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
 <div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',monospace;font-size:11px;color:#000;background:#fff;margin-bottom:3mm;padding:3mm;">
   <div style="display:flex;align-items:center;justify-content:flex-end;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     <div style="text-align:right;">
-      <div style="font-size:14px;font-weight:900;letter-spacing:2px;font-family:Georgia,serif;line-height:1.1;">KARTAL</div>
+      <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
       <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
     </div>
   </div>
@@ -120,8 +120,6 @@ export default function BulkPrint() {
         },
         body: JSON.stringify({
           ticketIds: selectedTickets,
-          user_email: user?.email,
-          role: user?.role
         }),
       });
 

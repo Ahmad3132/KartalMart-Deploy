@@ -142,7 +142,8 @@ export default function GenerateTicket() {
         navigate(`${base}/success/${data.tx_id}`);
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      const msg = typeof err === 'object' && err?.message ? err.message : String(err);
+      setMessage({ type: 'error', text: msg });
     }
   };
 

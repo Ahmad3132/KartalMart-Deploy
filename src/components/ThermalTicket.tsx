@@ -82,11 +82,11 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
           <img
             src={kartalLogo}
             alt="Kartal"
-            style={{ width: '16mm', height: '12mm', objectFit: 'contain', ...(isBW ? { filter: 'grayscale(100%)' } : {}) }}
+            style={{ width: '18mm', height: '14mm', objectFit: 'contain', ...(isBW ? { filter: 'grayscale(100%)' } : {}) }}
           />
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '2px', fontFamily: 'serif', lineHeight: 1.1 }}>
-              KARTAL
+            <div style={{ fontSize: '13px', fontWeight: 900, letterSpacing: '1.5px', fontFamily: 'serif', lineHeight: 1.1 }}>
+              KARTAL MART
             </div>
             <div style={{ fontSize: '7px', letterSpacing: '1.5px', marginTop: '1px' }}>
               GROUP OF COMPANIES

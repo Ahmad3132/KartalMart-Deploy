@@ -333,6 +333,7 @@ const migrations = [
   { table: 'transactions', column: 'step2_user', type: 'TEXT' },
   { table: 'transactions', column: 'step1_completed_at', type: 'DATETIME' },
   { table: 'users', column: 'accounts_enabled', type: 'INTEGER DEFAULT 0' },
+  { table: 'users', column: 'reprint_enabled', type: 'INTEGER DEFAULT 0' },
 ];
 
 for (const m of migrations) {
@@ -456,12 +457,12 @@ async function startServer() {
 
   // Users management
   app.get('/api/users/me', authenticateToken, (req: any, res: any) => {
-    const user = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, pdf_download_enabled, generate_ticket_enabled, scanner_enabled, bulk_print_enabled, reports_enabled, receipt_required, accounts_enabled, created_at FROM users WHERE email = ?').get(req.user.email);
+    const user = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, pdf_download_enabled, generate_ticket_enabled, scanner_enabled, bulk_print_enabled, reports_enabled, receipt_required, accounts_enabled, reprint_enabled, created_at FROM users WHERE email = ?').get(req.user.email);
     res.json(user);
   });
 
   app.get('/api/users', authenticateToken, (req, res) => {
-    const users = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, pdf_download_enabled, generate_ticket_enabled, scanner_enabled, bulk_print_enabled, reports_enabled, receipt_required, accounts_enabled, created_at FROM users').all();
+    const users = db.prepare('SELECT email, name, nick_name, role, status, profile_picture, bio, whatsapp_redirect_enabled, whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals, whatsapp_redirect_after_scan, custom_role_id, pdf_download_enabled, generate_ticket_enabled, scanner_enabled, bulk_print_enabled, reports_enabled, receipt_required, accounts_enabled, reprint_enabled, created_at FROM users').all();
     res.json(users);
   });
 
@@ -527,7 +528,7 @@ async function startServer() {
       'require_all_approvals', 'whatsapp_redirect_after_scan',
       'pdf_download_enabled', 'generate_ticket_enabled',
       'scanner_enabled', 'bulk_print_enabled', 'reports_enabled',
-      'receipt_required', 'accounts_enabled',
+      'receipt_required', 'accounts_enabled', 'reprint_enabled',
     ];
 
     const textFields = ['role', 'status', 'name', 'nick_name'];
@@ -672,27 +673,33 @@ async function startServer() {
   });
 
   // Printing
-  app.post('/api/tickets/:id/print', authenticateToken, (req, res) => {
+  app.post('/api/tickets/:id/print', authenticateToken, (req: any, res: any) => {
     const { id } = req.params;
-    const { user_email, role } = req.body;
-    
+    const currentUser = req.user;
+    const userEmail = currentUser.email;
+    const userRole = currentUser.role;
+
     const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as any;
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
-    if (role !== 'Admin' && ticket.printed_count > 0) {
-      return res.status(403).json({ error: 'Ticket already printed. Only Admin can reprint.' });
+    // Reprint logic: Admin always can, others need reprint_enabled permission
+    if (userRole !== 'Admin' && ticket.printed_count > 0) {
+      const userSettings = db.prepare('SELECT reprint_enabled FROM users WHERE email = ?').get(userEmail) as any;
+      if (!userSettings || userSettings.reprint_enabled !== 1) {
+        return res.status(403).json({ error: 'Ticket already printed. Only Admin or users with reprint permission can reprint.' });
+      }
     }
 
-    const user = db.prepare('SELECT nick_name FROM users WHERE email = ?').get(user_email) as any;
-    const nick = user?.nick_name || user_email;
+    const userInfo = db.prepare('SELECT nick_name FROM users WHERE email = ?').get(userEmail) as any;
+    const nick = userInfo?.nick_name || userEmail;
 
     db.prepare('UPDATE tickets SET printed_count = printed_count + 1, last_printed_at = CURRENT_TIMESTAMP, last_printed_by = ?, last_printed_by_nick = ? WHERE id = ?')
-      .run(user_email, nick, id);
-    
+      .run(userEmail, nick, id);
+
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
       'Print Ticket',
-      `Ticket ID: ${ticket.ticket_id} printed by ${nick} (${user_email})`,
-      user_email
+      `Ticket ID: ${ticket.ticket_id} printed by ${nick} (${userEmail})`,
+      userEmail
     );
 
     res.json({ success: true });
@@ -1114,12 +1121,19 @@ async function startServer() {
   });
 
   // Bulk Printing
-  app.post('/api/tickets/bulk-print', authenticateToken, (req, res) => {
-    const { ticketIds, user_email, role } = req.body;
-    
+  app.post('/api/tickets/bulk-print', authenticateToken, (req: any, res: any) => {
+    const { ticketIds } = req.body;
+    const currentUser = req.user;
+    const userEmail = currentUser.email;
+    const userRole = currentUser.role;
+
     if (!ticketIds || !Array.isArray(ticketIds)) {
       return res.status(400).json({ error: 'Invalid ticket IDs' });
     }
+
+    const userSettings = db.prepare('SELECT nick_name, reprint_enabled FROM users WHERE email = ?').get(userEmail) as any;
+    const nick = userSettings?.nick_name || userEmail;
+    const canReprint = userRole === 'Admin' || userSettings?.reprint_enabled === 1;
 
     const results = [];
     const errors = [];
@@ -1131,21 +1145,18 @@ async function startServer() {
         continue;
       }
 
-      if (role !== 'Admin' && ticket.printed_count > 0) {
+      if (!canReprint && ticket.printed_count > 0) {
         errors.push(`Ticket ${ticket.ticket_id} already printed`);
         continue;
       }
 
-      const user = db.prepare('SELECT nick_name FROM users WHERE email = ?').get(user_email) as any;
-      const nick = user?.nick_name || user_email;
-
       db.prepare('UPDATE tickets SET printed_count = printed_count + 1, last_printed_at = CURRENT_TIMESTAMP, last_printed_by = ?, last_printed_by_nick = ? WHERE id = ?')
-        .run(user_email, nick, id);
-      
+        .run(userEmail, nick, id);
+
       db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
         'Print Ticket (Bulk)',
         `Ticket ID: ${ticket.ticket_id}`,
-        user_email
+        userEmail
       );
       results.push(ticket);
     }

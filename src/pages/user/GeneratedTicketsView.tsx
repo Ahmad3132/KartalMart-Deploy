@@ -62,7 +62,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
     });
 
     const logoTag = logoB64
-      ? `<img src="${logoB64}" style="width:16mm;height:12mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
+      ? `<img src="${logoB64}" style="width:18mm;height:14mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
       : '';
 
     // QR code data as URL-safe string for the QR library
@@ -90,7 +90,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     ${logoTag}
     <div style="text-align:right;">
-      <div style="font-size:14px;font-weight:900;letter-spacing:2px;font-family:Georgia,serif;line-height:1.1;">KARTAL</div>
+      <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
       <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
     </div>
   </div>
@@ -129,7 +129,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
   win.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
-<title>Kartal Ticket Print</title>
+<title>Kartal Mart Ticket Print</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"><\/script>
 <style>
@@ -225,6 +225,8 @@ export default function GeneratedTicketsView() {
   const [appSettings, setAppSettings] = useState<any>({});
 
   const isAdmin = user?.role === 'Admin';
+  const [userMe, setUserMe] = useState<any>(null);
+  const canReprint = isAdmin || userMe?.reprint_enabled === 1;
 
   // Derived settings
   const printSettings: PrintSettings = {
@@ -241,9 +243,11 @@ export default function GeneratedTicketsView() {
     Promise.all([
       fetch(`/api/tickets?limit=1000`, { headers }).then(r => r.json()).catch(()=>({tickets:[]})),
       fetch('/api/settings', { headers }).then(r => r.json()).catch(()=>({})),
-    ]).then(([d, s]) => {
+      fetch('/api/users/me', { headers }).then(r => r.json()).catch(()=>null),
+    ]).then(([d, s, me]) => {
       setTickets((d.tickets || []).filter((t: any) => t.tx_id === txId));
       setAppSettings(s?.error ? {} : s);
+      setUserMe(me);
     });
   }, [txId]);
 
@@ -255,15 +259,15 @@ export default function GeneratedTicketsView() {
   // ── PRINT ──────────────────────────────────
   const handlePrint = async (ticketId: number) => {
     const ticket = tickets.find(t => t.id === ticketId);
-    if (!isAdmin && ticket?.printed_count > 0) {
-      showMsg('error', 'Reprinting is restricted to Admins only.');
+    if (!canReprint && ticket?.printed_count > 0) {
+      showMsg('error', 'Reprinting is restricted. Contact admin for reprint permission.');
       return;
     }
     try {
       const res = await fetch(`/api/tickets/${ticketId}/print`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` },
-        body: JSON.stringify({ user_email: user?.email, role: user?.role }),
+        body: JSON.stringify({}),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
       setTickets(ts => ts.map(t => t.id === ticketId ? { ...t, printed_count: t.printed_count + 1 } : t));
@@ -274,14 +278,14 @@ export default function GeneratedTicketsView() {
   };
 
   const handlePrintAll = async () => {
-    const toPrint = isAdmin ? tickets : tickets.filter(t => t.printed_count === 0);
+    const toPrint = canReprint ? tickets : tickets.filter(t => t.printed_count === 0);
     if (!toPrint.length) { showMsg('error', 'No unprinted tickets.'); return; }
 
     for (const t of toPrint) {
       await fetch(`/api/tickets/${t.id}/print`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` },
-        body: JSON.stringify({ user_email: user?.email, role: user?.role }),
+        body: JSON.stringify({}),
       }).catch(() => {});
     }
     setTickets(ts => ts.map(t => toPrint.find(p => p.id === t.id) ? { ...t, printed_count: t.printed_count + 1 } : t));
@@ -460,9 +464,9 @@ _Kartal Group of Companies_`;
             <div className="px-4 py-3 flex flex-wrap gap-2 no-print">
               <button
                 onClick={() => handlePrint(ticket.id)}
-                disabled={!isAdmin && ticket.printed_count > 0}
+                disabled={!canReprint && ticket.printed_count > 0}
                 className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                  !isAdmin && ticket.printed_count > 0
+                  !canReprint && ticket.printed_count > 0
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     : 'bg-gray-900 text-white hover:bg-gray-700'
                 }`}
