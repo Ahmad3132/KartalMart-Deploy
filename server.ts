@@ -238,6 +238,28 @@ db.exec(`
     created_by TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_number TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL DEFAULT 'Sale',
+    customer_name TEXT,
+    customer_mobile TEXT,
+    customer_address TEXT,
+    items TEXT NOT NULL,
+    subtotal REAL NOT NULL DEFAULT 0,
+    discount REAL NOT NULL DEFAULT 0,
+    tax REAL NOT NULL DEFAULT 0,
+    total REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'Draft',
+    notes TEXT,
+    due_date TEXT,
+    paid_at DATETIME,
+    transaction_id INTEGER,
+    created_by TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Migration: Add missing columns if they don't exist (for existing databases)
@@ -2064,6 +2086,104 @@ async function startServer() {
         processed++;
       }
       res.json({ success: true, processed, skipped, total: configs.length });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // INVOICE SYSTEM
+  // ════════════════════════════════════════════
+
+  // Generate next invoice number
+  function getNextInvoiceNumber(): string {
+    const year = new Date().getFullYear();
+    const last = db.prepare("SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1").get(`INV-${year}-%`) as any;
+    let seq = 1;
+    if (last?.invoice_number) {
+      const parts = last.invoice_number.split('-');
+      seq = parseInt(parts[2] || '0', 10) + 1;
+    }
+    return `INV-${year}-${String(seq).padStart(4, '0')}`;
+  }
+
+  // GET all invoices
+  app.get('/api/invoices', authenticateToken, (req: any, res: any) => {
+    try {
+      const { status, search, page = '1' } = req.query;
+      const limit = 20;
+      const offset = (parseInt(page as string) - 1) * limit;
+      let where = '1=1';
+      const params: any[] = [];
+      if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') {
+        where += ' AND created_by = ?';
+        params.push(req.user.email);
+      }
+      if (status) { where += ' AND status = ?'; params.push(status); }
+      if (search) {
+        where += ' AND (invoice_number LIKE ? OR customer_name LIKE ? OR customer_mobile LIKE ?)';
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      }
+      const total = (db.prepare(`SELECT count(*) as c FROM invoices WHERE ${where}`).get(...params) as any)?.c || 0;
+      const invoices = db.prepare(`SELECT * FROM invoices WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+      res.json({ invoices, total, page: parseInt(page as string), totalPages: Math.ceil(total / limit) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET single invoice
+  app.get('/api/invoices/:id', authenticateToken, (req: any, res: any) => {
+    try {
+      const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+      if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+      res.json(inv);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // CREATE invoice
+  app.post('/api/invoices', authenticateToken, (req: any, res: any) => {
+    try {
+      const { type, customer_name, customer_mobile, customer_address, items, subtotal, discount, tax, total, notes, due_date, transaction_id } = req.body;
+      if (!items || !Array.isArray(JSON.parse(typeof items === 'string' ? items : JSON.stringify(items)))) {
+        return res.status(400).json({ error: 'Items are required' });
+      }
+      const invoice_number = getNextInvoiceNumber();
+      const itemsStr = typeof items === 'string' ? items : JSON.stringify(items);
+      const result = db.prepare(`INSERT INTO invoices (invoice_number, type, customer_name, customer_mobile, customer_address, items, subtotal, discount, tax, total, notes, due_date, transaction_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(invoice_number, type || 'Sale', customer_name || '', customer_mobile || '', customer_address || '', itemsStr, subtotal || 0, discount || 0, tax || 0, total || 0, notes || '', due_date || '', transaction_id || null, req.user.email);
+      res.json({ id: result.lastInsertRowid, invoice_number });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // UPDATE invoice
+  app.put('/api/invoices/:id', authenticateToken, (req: any, res: any) => {
+    try {
+      const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+      if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+      if (inv.status === 'Paid') return res.status(400).json({ error: 'Cannot edit a paid invoice' });
+      const { type, customer_name, customer_mobile, customer_address, items, subtotal, discount, tax, total, notes, due_date, status } = req.body;
+      const itemsStr = items ? (typeof items === 'string' ? items : JSON.stringify(items)) : inv.items;
+      db.prepare(`UPDATE invoices SET type=?, customer_name=?, customer_mobile=?, customer_address=?, items=?, subtotal=?, discount=?, tax=?, total=?, notes=?, due_date=?, status=?, updated_at=datetime('now') WHERE id=?`)
+        .run(type || inv.type, customer_name ?? inv.customer_name, customer_mobile ?? inv.customer_mobile, customer_address ?? inv.customer_address, itemsStr, subtotal ?? inv.subtotal, discount ?? inv.discount, tax ?? inv.tax, total ?? inv.total, notes ?? inv.notes, due_date ?? inv.due_date, status || inv.status, req.params.id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Mark invoice as Paid
+  app.put('/api/invoices/:id/pay', authenticateToken, (req: any, res: any) => {
+    try {
+      const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+      if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+      db.prepare("UPDATE invoices SET status='Paid', paid_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // DELETE invoice (only Draft)
+  app.delete('/api/invoices/:id', authenticateToken, (req: any, res: any) => {
+    try {
+      const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+      if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+      if (inv.status !== 'Draft') return res.status(400).json({ error: 'Only draft invoices can be deleted' });
+      db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
+      res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

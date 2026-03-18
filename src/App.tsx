@@ -26,6 +26,7 @@ import Users from './pages/admin/Users';
 import Flow2Step1 from './pages/admin/Flow2Step1';
 import Flow2Step2 from './pages/user/Flow2Step2';
 import SalaryLoans from './pages/admin/SalaryLoans';
+import Invoices from './pages/admin/Invoices';
 
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { user } = useAuth();
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="users" element={<Users />} />
             <Route path="settings" element={<Settings />} />
             <Route path="salary-loans" element={<SalaryLoans />} />
+            <Route path="invoices" element={<Invoices />} />
             <Route path="flow2/step1" element={<Flow2Step1 />} />
             <Route path="flow2/step2" element={<Flow2Step2 />} />
           </Route>

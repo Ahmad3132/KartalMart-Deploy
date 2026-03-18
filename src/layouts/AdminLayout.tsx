@@ -19,6 +19,7 @@ const allNavItems = [
   { name: 'Bulk Print',       path: '/admin/bulk-print',icon: Printer,         roles: ['Admin'], feature: 'bulk_print_enabled' },
   { name: 'Reports',          path: '/admin/reports',   icon: BarChart2,       roles: ['Admin', 'Accountant'], feature: 'reports_enabled' },
   { name: 'Accounts',         path: '/admin/accounts',  icon: DollarSign,      roles: ['Admin', 'Accountant'] },
+  { name: 'Invoices',          path: '/admin/invoices',     icon: FileText,     roles: ['Admin', 'Accountant'] },
   { name: 'Salary & Loans',   path: '/admin/salary-loans', icon: Banknote,     roles: ['Admin', 'Accountant'] },
   { name: 'Audit Logs',       path: '/admin/audit',     icon: FileText,        roles: ['Admin'] },
   { name: 'Scanner',          path: '/admin/scanner',   icon: Scan,            roles: ['Admin'], feature: 'scanner_enabled' },
