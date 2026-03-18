@@ -24,8 +24,20 @@ async function imageToBase64(url: string): Promise<string> {
   });
 }
 
+interface PrintSettings {
+  watermarkEnabled: boolean;
+  qrEnabled: boolean;
+  colorMode: 'color' | 'bw';
+  companyPhone: string;
+  companyEmail: string;
+  companyWebsite: string;
+}
+
 // Open thermal print window for one or many tickets
-async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabled = false, qrEnabled = true) {
+async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: PrintSettings) {
+  const { watermarkEnabled, qrEnabled, colorMode, companyPhone, companyEmail, companyWebsite } = settings;
+  const isBW = colorMode === 'bw';
+
   // Get logo as base64 so it works in the isolated print window
   const logoEl = document.querySelector('img[alt="Kartal"]') as HTMLImageElement | null;
   let logoB64 = '';
@@ -35,6 +47,8 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabl
 
   const win = window.open('', '_blank', 'width=420,height=700,menubar=no,toolbar=no');
   if (!win) { alert('Please allow popups to enable printing.'); return; }
+
+  const hasContact = companyPhone || companyEmail || companyWebsite;
 
   const ticketBlocks = tickets.map(ticket => {
     // Always mask mobile in printed tickets (even for admin)
@@ -48,11 +62,30 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabl
     });
 
     const logoTag = logoB64
-      ? `<img src="${logoB64}" style="width:16mm;height:12mm;object-fit:contain;">`
+      ? `<img src="${logoB64}" style="width:16mm;height:12mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
       : '';
 
+    // QR code data as URL-safe string for the QR library
+    const qrData = JSON.stringify({
+      id: ticket.ticket_id,
+      name: ticket.name,
+      tx: ticket.tx_id,
+      gen: ticket.generation_id,
+    });
+
+    const contactSection = hasContact ? `
+      <div style="border-top:1px dashed #999;margin-top:1.5mm;padding-top:1.5mm;text-align:center;font-size:7px;color:#666;line-height:1.6;">
+        ${companyPhone ? `<div>📞 ${companyPhone}</div>` : ''}
+        ${companyEmail ? `<div>✉ ${companyEmail}</div>` : ''}
+        ${companyWebsite ? `<div>🌐 ${companyWebsite}</div>` : ''}
+      </div>` : '';
+
+    const watermarkSection = watermarkEnabled ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date().toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : '';
+
     return `
-<div style="position:relative;width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;">
+<div style="position:relative;width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;overflow:hidden;">
+
+  ${watermarkSection}
 
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     ${logoTag}
@@ -80,10 +113,16 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabl
     <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Agent:</span><span style="font-size:8px;">${ticket.generated_by_nick || ticket.generated_by}</span></div>
   </div>
 
-  ${qrEnabled ? `<div style="text-align:center;font-family:serif;font-size:9px;direction:rtl;margin:1.5mm 0;line-height:1.6;">
-    تصدیق کے لیے اسکین کریں
+  ${qrEnabled ? `<div class="qr-container" style="text-align:center;margin:1.5mm 0;">
+    <div style="display:inline-block;border:1px solid #000;padding:1.5mm;">
+      <canvas class="qr-canvas" data-qr='${qrData.replace(/'/g, "&#39;")}' width="90" height="90"></canvas>
+    </div>
+    <div style="font-size:9px;margin-top:1.5mm;font-family:'Noto Nastaliq Urdu',serif;direction:rtl;line-height:1.6;">
+      تصدیق کے لیے اسکین کریں
+    </div>
   </div>` : ''}
-  ${watermarkEnabled ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date().toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+
+  ${contactSection}
 </div>`;
   }).join('<div style="height:2mm;"></div>');
 
@@ -92,6 +131,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabl
 <meta charset="UTF-8">
 <title>Kartal Ticket Print</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   @page { size: 80mm auto; margin: 2mm; }
@@ -103,20 +143,37 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabl
 ${ticketBlocks}
 <script>
 window.onload = function() {
-  setTimeout(function() {
-    window.focus();
-    window.print();
-    setTimeout(function() { window.close(); }, 1500);
-  }, 400);
+  // Render QR codes on all canvases
+  var canvases = document.querySelectorAll('.qr-canvas');
+  var rendered = 0;
+  if (canvases.length === 0) {
+    setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 400);
+    return;
+  }
+  canvases.forEach(function(canvas) {
+    var data = canvas.getAttribute('data-qr');
+    if (data && typeof QRCode !== 'undefined') {
+      QRCode.toCanvas(canvas, data, { width: 90, margin: 0, errorCorrectionLevel: 'H' }, function() {
+        rendered++;
+        if (rendered >= canvases.length) {
+          setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 400);
+        }
+      });
+    } else {
+      rendered++;
+      if (rendered >= canvases.length) {
+        setTimeout(function() { window.focus(); window.print(); setTimeout(function() { window.close(); }, 1500); }, 400);
+      }
+    }
+  });
 };
-</script>
+<\/script>
 </body></html>`);
   win.document.close();
 }
 
-// Generate thermal PDF (80mm width) with optional watermark
-async function generateThermalPDF(tickets: any[], thermalRefs: { [key: string]: HTMLDivElement | null }, watermarkEnabled = false) {
-  // 80mm = 226.77pt in jsPDF
+// Generate thermal PDF (80mm width) — captures ThermalTicket component which already has QR, watermark, contact
+async function generateThermalPDF(tickets: any[], thermalRefs: { [key: string]: HTMLDivElement | null }) {
   const pdf = new jsPDF({ unit: 'mm', format: [80, 297], orientation: 'portrait' });
   let currentY = 3;
 
@@ -142,26 +199,8 @@ async function generateThermalPDF(tickets: any[], thermalRefs: { [key: string]: 
       currentY = 3;
     }
 
-    // Resize page to match content height
     pdf.internal.pageSize.height = imgH + currentY + 3;
-
     pdf.addImage(imgData, 'PNG', 3, currentY, imgW, imgH);
-
-    // Add watermark if enabled
-    if (watermarkEnabled) {
-      const now = new Date();
-      const watermarkText = now.toLocaleString('en-PK', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
-      pdf.setFontSize(8);
-      pdf.setTextColor(200, 200, 200);
-      // Save current state
-      const pageHeight = pdf.internal.pageSize.height;
-      // Diagonal watermark
-      const centerX = pageW / 2;
-      const centerY = (currentY + imgH) / 2;
-      pdf.text(watermarkText, centerX, centerY, { angle: 45, align: 'center' });
-      // Reset text color
-      pdf.setTextColor(0, 0, 0);
-    }
 
     currentY += imgH + 3;
   }
@@ -183,6 +222,16 @@ export default function GeneratedTicketsView() {
   const [appSettings, setAppSettings] = useState<any>({});
 
   const isAdmin = user?.role === 'Admin';
+
+  // Derived settings
+  const printSettings: PrintSettings = {
+    watermarkEnabled: appSettings.pdf_watermark_enabled === 'true',
+    qrEnabled: appSettings.pdf_qr_verification_enabled !== 'false',
+    colorMode: (appSettings.pdf_color_mode === 'bw' ? 'bw' : 'color') as 'color' | 'bw',
+    companyPhone: appSettings.company_phone || '',
+    companyEmail: appSettings.company_email || '',
+    companyWebsite: appSettings.company_website || '',
+  };
 
   useEffect(() => {
     const headers = { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` };
@@ -215,7 +264,7 @@ export default function GeneratedTicketsView() {
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
       setTickets(ts => ts.map(t => t.id === ticketId ? { ...t, printed_count: t.printed_count + 1 } : t));
-      await openThermalPrint([ticket], isAdmin, appSettings.pdf_watermark_enabled === 'true', appSettings.pdf_qr_verification_enabled !== 'false');
+      await openThermalPrint([ticket], isAdmin, printSettings);
     } catch (err: any) {
       showMsg('error', err.message || 'Print failed');
     }
@@ -225,7 +274,6 @@ export default function GeneratedTicketsView() {
     const toPrint = isAdmin ? tickets : tickets.filter(t => t.printed_count === 0);
     if (!toPrint.length) { showMsg('error', 'No unprinted tickets.'); return; }
 
-    // Log all prints
     for (const t of toPrint) {
       await fetch(`/api/tickets/${t.id}/print`, {
         method: 'POST',
@@ -234,12 +282,11 @@ export default function GeneratedTicketsView() {
       }).catch(() => {});
     }
     setTickets(ts => ts.map(t => toPrint.find(p => p.id === t.id) ? { ...t, printed_count: t.printed_count + 1 } : t));
-    await openThermalPrint(toPrint, isAdmin, appSettings.pdf_watermark_enabled === 'true', appSettings.pdf_qr_verification_enabled !== 'false');
+    await openThermalPrint(toPrint, isAdmin, printSettings);
   };
 
   // ── WHATSAPP ────────────────────────────────
   const handleWhatsApp = (ticket: any) => {
-    // Opens WhatsApp directly with the customer's number pre-filled
     const waNum = formatWANumber(ticket.mobile);
     const msg =
 `🎟 *KARTAL MART*
@@ -262,14 +309,12 @@ _Kartal Group of Companies_`;
   };
 
   const handleWhatsAppAll = () => {
-    // Send to each unique mobile number
     const seen = new Set<string>();
     tickets.forEach(t => {
       const waNum = formatWANumber(t.mobile);
       if (seen.has(waNum)) return;
       seen.add(waNum);
 
-      // Get all tickets for this number
       const theirTickets = tickets.filter(x => x.mobile === t.mobile);
       const ids = theirTickets.map(x => x.ticket_id).join(', ');
       const msg =
@@ -285,17 +330,18 @@ _Kartal Group of Companies_`;
 
       setTimeout(() => {
         window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(msg)}`, '_blank');
-      }, seen.size * 500); // stagger multiple windows slightly
+      }, seen.size * 500);
     });
   };
 
   // ── PDF ─────────────────────────────────────
+  // PDF captures the ThermalTicket component which already renders QR, watermark, contact info
   const handleDownloadPDF = async (ticketId?: number) => {
     const key = ticketId ? `pdf-${ticketId}` : 'pdf-all';
     setLoadingPDF(key);
     try {
       const list = ticketId ? tickets.filter(t => t.id === ticketId) : tickets;
-      const pdf = await generateThermalPDF(list, thermalRefs.current, appSettings.pdf_watermark_enabled === 'true');
+      const pdf = await generateThermalPDF(list, thermalRefs.current);
       const fname = ticketId ? `Ticket-${list[0].ticket_id}.pdf` : `Tickets-${txId}.pdf`;
       pdf.save(fname);
       showMsg('success', 'PDF downloaded!');
@@ -312,7 +358,7 @@ _Kartal Group of Companies_`;
   const handleSendPDF = async (ticket: any) => {
     setLoadingPDF(`send-${ticket.id}`);
     try {
-      const pdf = await generateThermalPDF([ticket], thermalRefs.current, appSettings.pdf_watermark_enabled === 'true');
+      const pdf = await generateThermalPDF([ticket], thermalRefs.current);
       const fname = `Ticket-${ticket.ticket_id}.pdf`;
       const blob = pdf.output('blob');
       const file = new File([blob], fname, { type: 'application/pdf' });
@@ -321,7 +367,6 @@ _Kartal Group of Companies_`;
         await navigator.share({ files: [file], title: `Kartal Ticket ${ticket.ticket_id}` });
       } else {
         pdf.save(fname);
-        // Also open WhatsApp with the customer's number
         handleWhatsApp(ticket);
       }
       fetch(`/api/tickets/${ticket.id}/share/pdf`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` } });
@@ -391,13 +436,18 @@ _Kartal Group of Companies_`;
       ) : (
         tickets.map((ticket) => (
           <div key={ticket.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {/* Thermal preview — this IS the ticket in all contexts */}
+            {/* Thermal preview — renders with ALL settings (QR, watermark, company info, color mode) */}
             <div className="flex justify-center py-4 bg-gray-50 border-b border-gray-100">
               <div style={{ transform: 'scale(1)', transformOrigin: 'top center' }}>
                 <ThermalTicket
                   ticket={ticket}
                   showFullMobile={false}
-                  showQR={appSettings.pdf_qr_verification_enabled !== 'false'}
+                  showQR={printSettings.qrEnabled}
+                  showWatermark={printSettings.watermarkEnabled}
+                  colorMode={printSettings.colorMode}
+                  companyPhone={printSettings.companyPhone}
+                  companyEmail={printSettings.companyEmail}
+                  companyWebsite={printSettings.companyWebsite}
                   ref={el => { thermalRefs.current[ticket.id] = el; }}
                 />
               </div>
@@ -405,7 +455,6 @@ _Kartal Group of Companies_`;
 
             {/* Action buttons */}
             <div className="px-4 py-3 flex flex-wrap gap-2 no-print">
-              {/* Print → thermal window */}
               <button
                 onClick={() => handlePrint(ticket.id)}
                 disabled={!isAdmin && ticket.printed_count > 0}
@@ -419,7 +468,6 @@ _Kartal Group of Companies_`;
                 {ticket.printed_count > 0 ? `Reprint (${ticket.printed_count}×)` : 'Print'}
               </button>
 
-              {/* Download PDF — thermal size */}
               <button
                 onClick={() => handleDownloadPDF(ticket.id)}
                 disabled={!!loadingPDF}
@@ -429,7 +477,6 @@ _Kartal Group of Companies_`;
                 {loadingPDF === `pdf-${ticket.id}` ? 'Generating...' : 'PDF'}
               </button>
 
-              {/* WhatsApp → directly to customer's number */}
               <button
                 onClick={() => handleWhatsApp(ticket)}
                 className="inline-flex items-center px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -438,7 +485,6 @@ _Kartal Group of Companies_`;
                 WhatsApp
               </button>
 
-              {/* Send PDF → share sheet or download+WhatsApp */}
               <button
                 onClick={() => handleSendPDF(ticket)}
                 disabled={!!loadingPDF}

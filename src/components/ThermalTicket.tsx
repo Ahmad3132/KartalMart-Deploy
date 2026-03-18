@@ -4,13 +4,18 @@ import kartalLogo from '../assets/kartal-logo.png';
 
 interface ThermalTicketProps {
   ticket: any;
-  showFullMobile?: boolean; // admin sees full, user sees masked
-  showQR?: boolean; // whether to show QR code section
+  showFullMobile?: boolean;
+  showQR?: boolean;
+  showWatermark?: boolean;
+  colorMode?: 'color' | 'bw'; // 'bw' = black & white
+  companyPhone?: string;
+  companyEmail?: string;
+  companyWebsite?: string;
 }
 
 // 80mm thermal paper = ~302px at 96dpi, printable width ~72mm = ~272px
 export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps>(
-  ({ ticket, showFullMobile = false, showQR = true }, ref) => {
+  ({ ticket, showFullMobile = false, showQR = true, showWatermark = false, colorMode = 'color', companyPhone, companyEmail, companyWebsite }, ref) => {
     const mobile = showFullMobile
       ? ticket.mobile
       : ticket.mobile
@@ -24,11 +29,23 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
       hour: '2-digit', minute: '2-digit', hour12: true
     });
 
+    const isBW = colorMode === 'bw';
+    const headerBg = isBW ? '#000' : '#000';
+    const headerFg = isBW ? '#fff' : '#fff';
+    const accentColor = isBW ? '#000' : '#000';
+
+    const hasContact = companyPhone || companyEmail || companyWebsite;
+
+    const watermarkText = new Date().toLocaleString('en-PK', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+
     return (
       <div
         ref={ref}
         className="thermal-ticket"
         style={{
+          position: 'relative',
           width: '72mm',
           minWidth: '72mm',
           maxWidth: '72mm',
@@ -39,14 +56,33 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
           padding: '3mm 3mm 4mm 3mm',
           boxSizing: 'border-box',
           margin: '0 auto',
+          overflow: 'hidden',
         }}
       >
+        {/* ---- WATERMARK OVERLAY ---- */}
+        {showWatermark && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%) rotate(-45deg)',
+            fontSize: '10px',
+            color: 'rgba(200,200,200,0.5)',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            zIndex: 10,
+            letterSpacing: '1px',
+          }}>
+            {watermarkText}
+          </div>
+        )}
+
         {/* ---- HEADER: Logo left, Company name right ---- */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #000', paddingBottom: '2mm', marginBottom: '2mm' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `2px solid ${accentColor}`, paddingBottom: '2mm', marginBottom: '2mm' }}>
           <img
             src={kartalLogo}
             alt="Kartal"
-            style={{ width: '16mm', height: '12mm', objectFit: 'contain' }}
+            style={{ width: '16mm', height: '12mm', objectFit: 'contain', ...(isBW ? { filter: 'grayscale(100%)' } : {}) }}
           />
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '14px', fontWeight: 900, letterSpacing: '2px', fontFamily: 'serif', lineHeight: 1.1 }}>
@@ -59,7 +95,7 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
         </div>
 
         {/* ---- TICKET ID (big) ---- */}
-        <div style={{ textAlign: 'center', margin: '1.5mm 0', background: '#000', color: '#fff', padding: '1.5mm', borderRadius: '1mm' }}>
+        <div style={{ textAlign: 'center', margin: '1.5mm 0', background: headerBg, color: headerFg, padding: '1.5mm', borderRadius: '1mm' }}>
           <div style={{ fontSize: '7px', letterSpacing: '2px' }}>TICKET NUMBER</div>
           <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '3px', lineHeight: 1.1 }}>
             {ticket.ticket_id}
@@ -99,10 +135,18 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
                 bgColor="#ffffff"
               />
             </div>
-            {/* Urdu text */}
             <div style={{ fontSize: '9px', marginTop: '1.5mm', fontFamily: 'Noto Nastaliq Urdu, serif', direction: 'rtl', lineHeight: 1.6 }}>
               تصدیق کے لیے اسکین کریں
             </div>
+          </div>
+        )}
+
+        {/* ---- COMPANY CONTACT INFO ---- */}
+        {hasContact && (
+          <div style={{ borderTop: '1px dashed #999', marginTop: '1.5mm', paddingTop: '1.5mm', textAlign: 'center', fontSize: '7px', color: '#666', lineHeight: 1.6 }}>
+            {companyPhone && <div>📞 {companyPhone}</div>}
+            {companyEmail && <div>✉ {companyEmail}</div>}
+            {companyWebsite && <div>🌐 {companyWebsite}</div>}
           </div>
         )}
       </div>
