@@ -5,11 +5,12 @@ import kartalLogo from '../assets/kartal-logo.png';
 interface ThermalTicketProps {
   ticket: any;
   showFullMobile?: boolean; // admin sees full, user sees masked
+  showQR?: boolean; // whether to show QR code section
 }
 
 // 80mm thermal paper = ~302px at 96dpi, printable width ~72mm = ~272px
 export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps>(
-  ({ ticket, showFullMobile = false }, ref) => {
+  ({ ticket, showFullMobile = false, showQR = true }, ref) => {
     const mobile = showFullMobile
       ? ticket.mobile
       : ticket.mobile
@@ -80,28 +81,30 @@ export const ThermalTicket = React.forwardRef<HTMLDivElement, ThermalTicketProps
           <Row label="Agent" value={ticket.generated_by_nick || ticket.generated_by} small />
         </div>
 
-        {/* ---- QR CODE ---- */}
-        <div style={{ textAlign: 'center', margin: '1.5mm 0' }}>
-          <div style={{ display: 'inline-block', border: '1px solid #000', padding: '1.5mm' }}>
-            <QRCodeSVG
-              value={JSON.stringify({
-                id: ticket.ticket_id,
-                name: ticket.name,
-                tx: ticket.tx_id,
-                gen: ticket.generation_id,
-              })}
-              size={90}
-              level="H"
-              includeMargin={false}
-              fgColor="#000000"
-              bgColor="#ffffff"
-            />
+        {/* ---- QR CODE (conditional) ---- */}
+        {showQR && (
+          <div style={{ textAlign: 'center', margin: '1.5mm 0' }}>
+            <div style={{ display: 'inline-block', border: '1px solid #000', padding: '1.5mm' }}>
+              <QRCodeSVG
+                value={JSON.stringify({
+                  id: ticket.ticket_id,
+                  name: ticket.name,
+                  tx: ticket.tx_id,
+                  gen: ticket.generation_id,
+                })}
+                size={90}
+                level="H"
+                includeMargin={false}
+                fgColor="#000000"
+                bgColor="#ffffff"
+              />
+            </div>
+            {/* Urdu text */}
+            <div style={{ fontSize: '9px', marginTop: '1.5mm', fontFamily: 'Noto Nastaliq Urdu, serif', direction: 'rtl', lineHeight: 1.6 }}>
+              تصدیق کے لیے اسکین کریں
+            </div>
           </div>
-          {/* Urdu text */}
-          <div style={{ fontSize: '9px', marginTop: '1.5mm', fontFamily: 'Noto Nastaliq Urdu, serif', direction: 'rtl', lineHeight: 1.6 }}>
-            تصدیق کے لیے اسکین کریں
-          </div>
-        </div>
+        )}
       </div>
     );
   }

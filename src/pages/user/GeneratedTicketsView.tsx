@@ -25,7 +25,7 @@ async function imageToBase64(url: string): Promise<string> {
 }
 
 // Open thermal print window for one or many tickets
-async function openThermalPrint(tickets: any[], isAdmin: boolean) {
+async function openThermalPrint(tickets: any[], isAdmin: boolean, watermarkEnabled = false, qrEnabled = true) {
   // Get logo as base64 so it works in the isolated print window
   const logoEl = document.querySelector('img[alt="Kartal"]') as HTMLImageElement | null;
   let logoB64 = '';
@@ -52,7 +52,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
       : '';
 
     return `
-<div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;">
+<div style="position:relative;width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;">
 
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     ${logoTag}
@@ -80,9 +80,10 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
     <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Agent:</span><span style="font-size:8px;">${ticket.generated_by_nick || ticket.generated_by}</span></div>
   </div>
 
-  <div style="text-align:center;font-family:serif;font-size:9px;direction:rtl;margin:1.5mm 0;line-height:1.6;">
+  ${qrEnabled ? `<div style="text-align:center;font-family:serif;font-size:9px;direction:rtl;margin:1.5mm 0;line-height:1.6;">
     تصدیق کے لیے اسکین کریں
-  </div>
+  </div>` : ''}
+  ${watermarkEnabled ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date().toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
 </div>`;
   }).join('<div style="height:2mm;"></div>');
 
@@ -214,7 +215,7 @@ export default function GeneratedTicketsView() {
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
       setTickets(ts => ts.map(t => t.id === ticketId ? { ...t, printed_count: t.printed_count + 1 } : t));
-      await openThermalPrint([ticket], isAdmin);
+      await openThermalPrint([ticket], isAdmin, appSettings.pdf_watermark_enabled === 'true', appSettings.pdf_qr_verification_enabled !== 'false');
     } catch (err: any) {
       showMsg('error', err.message || 'Print failed');
     }
@@ -233,7 +234,7 @@ export default function GeneratedTicketsView() {
       }).catch(() => {});
     }
     setTickets(ts => ts.map(t => toPrint.find(p => p.id === t.id) ? { ...t, printed_count: t.printed_count + 1 } : t));
-    await openThermalPrint(toPrint, isAdmin);
+    await openThermalPrint(toPrint, isAdmin, appSettings.pdf_watermark_enabled === 'true', appSettings.pdf_qr_verification_enabled !== 'false');
   };
 
   // ── WHATSAPP ────────────────────────────────
@@ -396,6 +397,7 @@ _Kartal Group of Companies_`;
                 <ThermalTicket
                   ticket={ticket}
                   showFullMobile={false}
+                  showQR={appSettings.pdf_qr_verification_enabled !== 'false'}
                   ref={el => { thermalRefs.current[ticket.id] = el; }}
                 />
               </div>

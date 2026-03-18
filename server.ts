@@ -489,7 +489,8 @@ async function startServer() {
     res.json(obj);
   });
 
-  app.put('/api/settings', authenticateToken, (req, res) => {
+  app.put('/api/settings', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Only Admin can modify settings' });
     const { key, value } = req.body;
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value));
     res.json({ success: true });
@@ -832,15 +833,16 @@ async function startServer() {
           // Auto-create account Cash In record
           try {
             db.prepare(`
-              INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id)
-              VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?)
+              INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id, user_email)
+              VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?, ?)
             `).run(
               pkg.amount,
               payment_type || 'Online',
               `Ticket sale — TX: ${finalTxId} | ${is_multi_person ? 'Multi-person' : (name || 'Customer')}`,
-              user_email,
               currentUser.email,
-              finalTxId
+              currentUser.email,
+              finalTxId,
+              currentUser.email
             );
           } catch (accErr) {
             console.error('Account TX creation failed (non-critical):', accErr);
@@ -1871,7 +1873,7 @@ async function startServer() {
   // ════════════════════════════════════════════
   // PUBLIC TICKET VERIFICATION
   // ════════════════════════════════════════════
-  app.get('/api/tickets/verify/:ticketId', (req, res) => {
+  app.get('/api/tickets/public-verify/:ticketId', (req, res) => {
     const ticket = db.prepare('SELECT ticket_id, name, mobile, tx_id, date, generated_by_nick FROM tickets WHERE ticket_id = ?').get(req.params.ticketId) as any;
     if (!ticket) return res.status(404).json({ error: 'Ticket not found', valid: false });
     res.json({ valid: true, ticket: { ...ticket, mobile: ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : '' } });

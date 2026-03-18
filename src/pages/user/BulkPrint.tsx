@@ -17,7 +17,8 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
   if (!win) { alert('Please allow popups to enable printing.'); return; }
 
   const ticketBlocks = tickets.map(ticket => {
-    const mobile = isAdmin ? (ticket.mobile || '') : (ticket.mobile || '').slice(0, -3) + '***';
+    // Always mask mobile in prints (even for admin)
+    const mobile = (ticket.mobile || '').slice(0, -3) + '***';
     const date = new Date(ticket.date).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: '2-digit' });
     return `
 <div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',monospace;font-size:11px;color:#000;background:#fff;margin-bottom:3mm;padding:3mm;">

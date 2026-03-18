@@ -77,10 +77,14 @@ export default function AdminDashboard() {
         // Map server field names to chart field names
         const revenue = (data.revenue || []).map((r: any) => ({ date: r.day, amount: r.total || 0 }));
         const onlineVsOffline = (data.onlineVsOffline || []).map((r: any) => ({ name: r.payment_type || 'Unknown', value: r.count || 0 }));
-        setGraphData({ revenue, onlineVsOffline, sales: data.sales, growth: data.growth });
+        setGraphData({ revenue, onlineVsOffline, sales: data.sales || [], growth: data.growth || [] });
+      } else {
+        // Set empty data so UI shows "No data" instead of "Loading..."
+        setGraphData({ revenue: [], onlineVsOffline: [], sales: [], growth: [] });
       }
     } catch (err) {
       console.error('Failed to fetch graph data:', err);
+      setGraphData({ revenue: [], onlineVsOffline: [], sales: [], growth: [] });
     }
   };
 
