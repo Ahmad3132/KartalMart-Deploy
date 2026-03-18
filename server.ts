@@ -498,6 +498,21 @@ async function startServer() {
     }
   });
 
+  // Change password (must be before /:email route)
+  app.put('/api/users/change-password', authenticateToken, (req: any, res: any) => {
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password) return res.status(400).json({ error: 'Current and new password required' });
+    if (new_password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const u = db.prepare('SELECT * FROM users WHERE email = ?').get(req.user.email) as any;
+    if (!u || !bcrypt.compareSync(current_password, u.password)) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    const hash = bcrypt.hashSync(new_password, 10);
+    db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hash, req.user.email);
+    db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Password Changed', 'User changed their password', req.user.email);
+    res.json({ success: true });
+  });
+
   app.put('/api/users/:email', authenticateToken, (req, res) => {
     const { email } = req.params;
     const body = req.body;
@@ -2231,6 +2246,116 @@ async function startServer() {
       if (inv.status !== 'Draft') return res.status(400).json({ error: 'Only draft invoices can be deleted' });
       db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
       res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ════════════════════════════════════════════
+  // RECEIPT GENERATION
+  // ════════════════════════════════════════════
+
+  // Create receipts table (inline for existing DBs)
+  db.exec(`CREATE TABLE IF NOT EXISTS receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_number TEXT NOT NULL UNIQUE,
+    type TEXT NOT NULL,
+    reference_type TEXT,
+    reference_id INTEGER,
+    from_party TEXT,
+    to_party TEXT,
+    amount REAL NOT NULL,
+    description TEXT,
+    payment_method TEXT DEFAULT 'Cash',
+    created_by TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  function getNextReceiptNumber(): string {
+    const year = new Date().getFullYear();
+    const last = db.prepare("SELECT MAX(CAST(SUBSTR(receipt_number, -4) AS INTEGER)) as seq FROM receipts WHERE receipt_number LIKE ?").get(`RCP-${year}-%`) as any;
+    const seq = (last?.seq || 0) + 1;
+    return `RCP-${year}-${String(seq).padStart(4, '0')}`;
+  }
+
+  // GET receipts
+  app.get('/api/receipts', authenticateToken, (req: any, res: any) => {
+    try {
+      const { type, search, page = '1' } = req.query;
+      const limit = 20;
+      const offset = (parseInt(page as string) - 1) * limit;
+      let where = '1=1';
+      const params: any[] = [];
+      if (req.user.role !== 'Admin' && req.user.role !== 'Accountant') {
+        where += ' AND (from_party = ? OR to_party = ? OR created_by = ?)';
+        params.push(req.user.email, req.user.email, req.user.email);
+      }
+      if (type) { where += ' AND type = ?'; params.push(type); }
+      if (search) { where += ' AND (receipt_number LIKE ? OR description LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+      const total = (db.prepare(`SELECT count(*) as c FROM receipts WHERE ${where}`).get(...params) as any)?.c || 0;
+      const receipts = db.prepare(`SELECT * FROM receipts WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+      res.json({ receipts, total });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET single receipt
+  app.get('/api/receipts/:id', authenticateToken, (req: any, res: any) => {
+    const r = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Receipt not found' });
+    res.json(r);
+  });
+
+  // CREATE receipt manually
+  app.post('/api/receipts', authenticateToken, (req: any, res: any) => {
+    try {
+      const { type, reference_type, reference_id, from_party, to_party, amount, description, payment_method } = req.body;
+      if (!amount || amount <= 0) return res.status(400).json({ error: 'Valid amount required' });
+      const receipt_number = getNextReceiptNumber();
+      const result = db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, type || 'Payment', reference_type || null, reference_id || null, from_party || '', to_party || '', amount, description || '', payment_method || 'Cash', req.user.email);
+      res.json({ id: result.lastInsertRowid, receipt_number });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Auto-generate receipt for salary transaction
+  app.post('/api/receipts/from-salary/:salaryTxId', authenticateToken, (req: any, res: any) => {
+    try {
+      const tx = db.prepare('SELECT * FROM salary_transactions WHERE id = ?').get(req.params.salaryTxId) as any;
+      if (!tx) return res.status(404).json({ error: 'Salary transaction not found' });
+      const existing = db.prepare("SELECT id, receipt_number FROM receipts WHERE reference_type='salary' AND reference_id=?").get(tx.id) as any;
+      if (existing) return res.json({ id: existing.id, receipt_number: existing.receipt_number, existing: true });
+      const receipt_number = getNextReceiptNumber();
+      const result = db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, tx.type === 'Salary' ? 'Salary Payment' : tx.type, 'salary', tx.id, 'Company', tx.user_email, tx.amount, tx.description || `${tx.type} for ${tx.month || 'N/A'}`, 'Cash', req.user.email);
+      res.json({ id: result.lastInsertRowid, receipt_number });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Auto-generate receipt for cash transfer
+  app.post('/api/receipts/from-transfer/:transferId', authenticateToken, (req: any, res: any) => {
+    try {
+      const tr = db.prepare('SELECT * FROM cash_transfers WHERE id = ?').get(req.params.transferId) as any;
+      if (!tr) return res.status(404).json({ error: 'Transfer not found' });
+      const existing = db.prepare("SELECT id, receipt_number FROM receipts WHERE reference_type='transfer' AND reference_id=?").get(tr.id) as any;
+      if (existing) return res.json({ id: existing.id, receipt_number: existing.receipt_number, existing: true });
+      const receipt_number = getNextReceiptNumber();
+      const result = db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, 'Cash Transfer', 'transfer', tr.id, tr.from_user, tr.to_user, tr.amount, tr.description || 'Cash transfer', 'Cash', req.user.email);
+      res.json({ id: result.lastInsertRowid, receipt_number });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Auto-generate receipt for account transaction
+  app.post('/api/receipts/from-account-tx/:txId', authenticateToken, (req: any, res: any) => {
+    try {
+      const tx = db.prepare('SELECT * FROM account_transactions WHERE id = ?').get(req.params.txId) as any;
+      if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+      const existing = db.prepare("SELECT id, receipt_number FROM receipts WHERE reference_type='account_tx' AND reference_id=?").get(tx.id) as any;
+      if (existing) return res.json({ id: existing.id, receipt_number: existing.receipt_number, existing: true });
+      const receipt_number = getNextReceiptNumber();
+      const from = tx.type === 'Cash In' ? (tx.source || 'External') : tx.user_email;
+      const to = tx.type === 'Cash In' ? tx.user_email : (tx.category || 'External');
+      const result = db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, tx.type, 'account_tx', tx.id, from, to, tx.amount, tx.description || `${tx.type} - ${tx.category}`, 'Cash', req.user.email);
+      res.json({ id: result.lastInsertRowid, receipt_number });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

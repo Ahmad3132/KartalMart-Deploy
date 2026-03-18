@@ -167,7 +167,7 @@ export default function UserDashboard() {
                 <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-all transform translate-x-0 group-hover:translate-x-1" />
               </button>
               <button
-                onClick={() => navigate('/scanner')}
+                onClick={() => navigate('/user/scanner')}
                 className="w-full flex items-center justify-between p-4 bg-white/10 hover:bg-white/20 rounded-xl transition-colors group"
               >
                 <div className="flex items-center">

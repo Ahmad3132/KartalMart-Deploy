@@ -554,7 +554,7 @@ export default function AdminDashboard() {
           </div>
           <div className="p-4 border-t border-gray-50">
             <button
-              onClick={() => navigate('/admin/transactions/pending')}
+              onClick={() => navigate('/admin/approvals')}
               className="w-full py-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 flex items-center justify-center"
             >
               View All Approvals <ArrowRight className="w-4 h-4 ml-2" />

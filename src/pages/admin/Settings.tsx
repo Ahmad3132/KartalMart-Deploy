@@ -235,6 +235,35 @@ export default function Settings() {
               <div><label className="field-label">Short Bio</label><textarea name="bio" defaultValue={me.bio} rows={3} className="field resize-none" placeholder="Tell us about yourself..."/></div>
               <button type="submit" disabled={saving} className="btn-primary w-full"><Save className="w-4 h-4 mr-2"/>{saving?'Saving...':'Save Profile'}</button>
             </form>
+
+            {/* Change Password */}
+            <div className="mt-8 border-t border-gray-100 pt-6">
+              <h3 className="text-base font-bold text-gray-900 mb-4">Change Password</h3>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const current_password = fd.get('current_password') as string;
+                const new_password = fd.get('new_password') as string;
+                const confirm_password = fd.get('confirm_password') as string;
+                if (new_password !== confirm_password) { toast('Passwords do not match', true); return; }
+                if (new_password.length < 6) { toast('Password must be at least 6 characters', true); return; }
+                try {
+                  const r = await fetch('/api/users/change-password', {
+                    method: 'PUT', headers: { ...h(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ current_password, new_password })
+                  });
+                  const d = await r.json();
+                  if (!r.ok) { toast(d.error || 'Failed', true); return; }
+                  toast('Password changed successfully!');
+                  (e.target as HTMLFormElement).reset();
+                } catch { toast('Failed to change password', true); }
+              }} className="space-y-4 max-w-md">
+                <div><label className="field-label">Current Password</label><input name="current_password" type="password" required className="field" /></div>
+                <div><label className="field-label">New Password</label><input name="new_password" type="password" required minLength={6} className="field" /></div>
+                <div><label className="field-label">Confirm New Password</label><input name="confirm_password" type="password" required minLength={6} className="field" /></div>
+                <button type="submit" className="btn-primary"><Save className="w-4 h-4 mr-2"/>Change Password</button>
+              </form>
+            </div>
           </div>
         )}
 
