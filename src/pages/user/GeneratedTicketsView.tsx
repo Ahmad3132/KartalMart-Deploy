@@ -35,8 +35,7 @@ interface PrintSettings {
 
 // Open thermal print window for one or many tickets
 async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: PrintSettings) {
-  const { watermarkEnabled, qrEnabled, colorMode, companyPhone, companyEmail, companyWebsite } = settings;
-  const isBW = colorMode === 'bw';
+  // `settings` is the fallback (global) — each ticket may override via template_* columns
 
   // Get logo as base64 so it works in the isolated print window
   const logoEl = document.querySelector('img[alt="Kartal"]') as HTMLImageElement | null;
@@ -48,9 +47,17 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
   const win = window.open('', '_blank', 'width=420,height=700,menubar=no,toolbar=no');
   if (!win) { alert('Please allow popups to enable printing.'); return; }
 
-  const hasContact = companyPhone || companyEmail || companyWebsite;
-
   const ticketBlocks = tickets.map(ticket => {
+    // Use ticket-level template snapshot if available, otherwise fall back to global settings
+    const tQR = ticket.template_qr_enabled != null ? ticket.template_qr_enabled !== 'false' : settings.qrEnabled;
+    const tWatermark = ticket.template_watermark_enabled != null ? ticket.template_watermark_enabled === 'true' : settings.watermarkEnabled;
+    const tColorMode = ticket.template_color_mode || settings.colorMode;
+    const tPhone = ticket.template_company_phone ?? settings.companyPhone;
+    const tEmail = ticket.template_company_email ?? settings.companyEmail;
+    const tWebsite = ticket.template_company_website ?? settings.companyWebsite;
+    const isBW = tColorMode === 'bw';
+    const hasContact = tPhone || tEmail || tWebsite;
+
     // Always mask mobile in printed tickets (even for admin)
     const mobile = (ticket.mobile || '').slice(0, -3) + '***';
 
@@ -75,12 +82,12 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
 
     const contactSection = hasContact ? `
       <div style="border-top:1px dashed #999;margin-top:1.5mm;padding-top:1.5mm;text-align:center;font-size:7px;color:#666;line-height:1.6;">
-        ${companyPhone ? `<div>📞 ${companyPhone}</div>` : ''}
-        ${companyEmail ? `<div>✉ ${companyEmail}</div>` : ''}
-        ${companyWebsite ? `<div>🌐 ${companyWebsite}</div>` : ''}
+        ${tPhone ? `<div>📞 ${tPhone}</div>` : ''}
+        ${tEmail ? `<div>✉ ${tEmail}</div>` : ''}
+        ${tWebsite ? `<div>🌐 ${tWebsite}</div>` : ''}
       </div>` : '';
 
-    const watermarkSection = watermarkEnabled ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date(ticket.date).toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : '';
+    const watermarkSection = tWatermark ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date(ticket.date).toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : '';
 
     return `
 <div style="position:relative;width:72mm;page-break-inside:avoid;font-family:'Courier New',Courier,monospace;font-size:11px;color:#000;background:#fff;padding:3mm;margin-bottom:3mm;overflow:hidden;">
@@ -114,7 +121,7 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean, settings: Prin
     <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Print by:</span><span style="font-size:8px;">${ticket.last_printed_by_nick || ticket.generated_by_nick || ''}</span></div>
   </div>
 
-  ${qrEnabled ? `<div class="qr-container" style="text-align:center;margin:1.5mm 0;">
+  ${tQR ? `<div class="qr-container" style="text-align:center;margin:1.5mm 0;">
     <div style="display:inline-block;border:1px solid #000;padding:1.5mm;">
       <canvas class="qr-canvas" data-qr='${qrData.replace(/'/g, "&#39;")}' width="90" height="90"></canvas>
     </div>
@@ -450,12 +457,12 @@ _Kartal Group of Companies_`;
                 <ThermalTicket
                   ticket={ticket}
                   showFullMobile={false}
-                  showQR={printSettings.qrEnabled}
-                  showWatermark={printSettings.watermarkEnabled}
-                  colorMode={printSettings.colorMode}
-                  companyPhone={printSettings.companyPhone}
-                  companyEmail={printSettings.companyEmail}
-                  companyWebsite={printSettings.companyWebsite}
+                  showQR={ticket.template_qr_enabled != null ? ticket.template_qr_enabled !== 'false' : printSettings.qrEnabled}
+                  showWatermark={ticket.template_watermark_enabled != null ? ticket.template_watermark_enabled === 'true' : printSettings.watermarkEnabled}
+                  colorMode={(ticket.template_color_mode || printSettings.colorMode) as 'color' | 'bw'}
+                  companyPhone={ticket.template_company_phone ?? printSettings.companyPhone}
+                  companyEmail={ticket.template_company_email ?? printSettings.companyEmail}
+                  companyWebsite={ticket.template_company_website ?? printSettings.companyWebsite}
                   ref={el => { thermalRefs.current[ticket.id] = el; }}
                 />
               </div>

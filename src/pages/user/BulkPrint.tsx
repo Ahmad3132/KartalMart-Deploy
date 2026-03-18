@@ -20,8 +20,19 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
     // Always mask mobile in prints (even for admin)
     const mobile = (ticket.mobile || '').slice(0, -3) + '***';
     const date = new Date(ticket.date).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+    // Use per-ticket template snapshot if available
+    const tQR = ticket.template_qr_enabled != null ? ticket.template_qr_enabled !== 'false' : true;
+    const tWatermark = ticket.template_watermark_enabled != null ? ticket.template_watermark_enabled === 'true' : false;
+    const tPhone = ticket.template_company_phone || '';
+    const tEmail = ticket.template_company_email || '';
+    const tWebsite = ticket.template_company_website || '';
+    const hasContact = tPhone || tEmail || tWebsite;
+    const qrData = JSON.stringify({ id: ticket.ticket_id, name: ticket.name, tx: ticket.tx_id, gen: ticket.generation_id });
+
     return `
-<div style="width:72mm;page-break-inside:avoid;font-family:'Courier New',monospace;font-size:11px;color:#000;background:#fff;margin-bottom:3mm;padding:3mm;">
+<div style="position:relative;width:72mm;page-break-inside:avoid;font-family:'Courier New',monospace;font-size:11px;color:#000;background:#fff;margin-bottom:3mm;padding:3mm;overflow:hidden;">
+  ${tWatermark ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date(ticket.date).toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
   <div style="display:flex;align-items:center;justify-content:flex-end;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     <div style="text-align:right;">
       <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
@@ -38,15 +49,36 @@ async function openThermalPrint(tickets: any[], isAdmin: boolean) {
   </div>
   <div style="padding:1mm 0;font-size:8px;">
     <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">Date:</span><span>${date}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;">Date:</span><span>${date}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;">Gen. by:</span><span>${ticket.generated_by_nick || ticket.generated_by || ''}</span></div>
+    ${ticket.last_printed_by_nick ? `<div style="display:flex;justify-content:space-between;"><span style="color:#555;">Print by:</span><span>${ticket.last_printed_by_nick}</span></div>` : ''}
   </div>
+  ${tQR ? `<div class="qr-container" style="text-align:center;margin:1.5mm 0;"><div style="display:inline-block;border:1px solid #000;padding:1.5mm;"><canvas class="qr-canvas" data-qr='${qrData.replace(/'/g, "&#39;")}' width="90" height="90"></canvas></div><div style="font-size:9px;margin-top:1.5mm;font-family:'Noto Nastaliq Urdu',serif;direction:rtl;line-height:1.6;">تصدیق کے لیے اسکین کریں</div></div>` : ''}
+  ${hasContact ? `<div style="border-top:1px dashed #999;margin-top:1.5mm;padding-top:1.5mm;text-align:center;font-size:7px;color:#666;line-height:1.6;">${tPhone ? `<div>📞 ${tPhone}</div>` : ''}${tEmail ? `<div>✉ ${tEmail}</div>` : ''}${tWebsite ? `<div>🌐 ${tWebsite}</div>` : ''}</div>` : ''}
 </div>`;
   }).join('<div style="height:1mm;"></div>');
 
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bulk Print</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"><\/script>
 <style>* { margin:0;padding:0;box-sizing:border-box; } @page { size:80mm auto;margin:2mm; } html,body{width:80mm;background:#fff;} body{display:flex;flex-direction:column;align-items:center;padding:2mm;} @media screen{body{background:#ddd;padding:10px;}}</style>
 </head><body>${ticketBlocks}
-<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},1500);},400);};</script>
+<script>
+function renderAndPrint() {
+  var canvases = document.querySelectorAll('.qr-canvas');
+  var rendered = 0, total = canvases.length;
+  function doPrint() { setTimeout(function(){ window.focus(); window.print(); setTimeout(function(){ window.close(); },1500); },600); }
+  if (total === 0) { doPrint(); return; }
+  canvases.forEach(function(canvas) {
+    var data = canvas.getAttribute('data-qr');
+    if (data && typeof QRCode !== 'undefined') {
+      QRCode.toCanvas(canvas, data, { width: 90, margin: 0, errorCorrectionLevel: 'H' }, function() { rendered++; if (rendered >= total) doPrint(); });
+    } else { rendered++; if (rendered >= total) doPrint(); }
+  });
+}
+function waitForQR(a) { if (typeof QRCode !== 'undefined') { renderAndPrint(); return; } if (a > 50) { renderAndPrint(); return; } setTimeout(function(){ waitForQR(a+1); }, 100); }
+window.onload = function() { waitForQR(0); };
+<\/script>
 </body></html>`);
   win.document.close();
 }

@@ -336,6 +336,13 @@ const migrations = [
   { table: 'users', column: 'reprint_enabled', type: 'INTEGER DEFAULT 0' },
   { table: 'tickets', column: 'status', type: "TEXT DEFAULT 'Active'" },
   { table: 'campaigns', column: 'created_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
+  // Template snapshot — preserve ticket appearance at generation time
+  { table: 'tickets', column: 'template_qr_enabled', type: "TEXT DEFAULT 'true'" },
+  { table: 'tickets', column: 'template_watermark_enabled', type: "TEXT DEFAULT 'true'" },
+  { table: 'tickets', column: 'template_color_mode', type: "TEXT DEFAULT 'color'" },
+  { table: 'tickets', column: 'template_company_phone', type: 'TEXT' },
+  { table: 'tickets', column: 'template_company_email', type: 'TEXT' },
+  { table: 'tickets', column: 'template_company_website', type: 'TEXT' },
 ];
 
 for (const m of migrations) {
@@ -762,6 +769,20 @@ async function startServer() {
     });
   });
 
+  // Emergency password reset — no auth required, resets admin@kartal.com to 'admin123'
+  app.post('/api/reset-admin-password', (req: any, res) => {
+    const { secret } = req.body;
+    // Simple secret key to prevent random resets — user must know this
+    if (secret !== 'kartal-reset-2024') {
+      return res.status(403).json({ error: 'Invalid reset secret' });
+    }
+    const admin = db.prepare('SELECT email FROM users WHERE role = ? LIMIT 1').get('Admin') as any;
+    if (!admin) return res.status(404).json({ error: 'No admin user found' });
+    const newPassword = bcrypt.hashSync('admin123', 10);
+    db.prepare('UPDATE users SET password = ? WHERE email = ?').run(newPassword, admin.email);
+    res.json({ success: true, email: admin.email, message: 'Admin password reset to admin123. Please change it immediately after login.' });
+  });
+
   // Campaigns
   app.get('/api/campaigns', authenticateToken, (req, res) => {
     const campaigns = db.prepare('SELECT * FROM campaigns').all();
@@ -964,9 +985,9 @@ async function startServer() {
             'Create Transaction', `Transaction ${finalTxId} created and tickets generated`, currentUser.email
           );
 
-          // Auto-create account Cash In record
+          // Auto-create account Cash In record + receipt
           try {
-            db.prepare(`
+            const acctResult = db.prepare(`
               INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id, user_email)
               VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?, ?)
             `).run(
@@ -978,6 +999,7 @@ async function startServer() {
               finalTxId,
               currentUser.email
             );
+            autoGenerateReceipt(acctResult.lastInsertRowid as number, currentUser.email);
           } catch (accErr) {
             console.error('Account TX creation failed (non-critical):', accErr);
           }
@@ -997,7 +1019,18 @@ async function startServer() {
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const prefix = `${yy}${mm}`;
 
-    const insertTicket = db.prepare('INSERT INTO tickets (ticket_id, generation_id, campaign_id, user_email, generated_by, generated_by_nick, created_by_user_id, tx_id, name, mobile, address, total_tickets_in_tx, person_ticket_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Snapshot current global settings so ticket appearance is preserved forever
+    const allSettings = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+    const sMap: Record<string, string> = {};
+    for (const s of allSettings) sMap[s.key] = s.value;
+    const tplQR = sMap['pdf_qr_verification_enabled'] || 'true';
+    const tplWatermark = sMap['pdf_watermark_enabled'] || 'true';
+    const tplColorMode = sMap['pdf_color_mode'] || 'color';
+    const tplPhone = sMap['company_phone'] || '';
+    const tplEmail = sMap['company_email'] || '';
+    const tplWebsite = sMap['company_website'] || '';
+
+    const insertTicket = db.prepare('INSERT INTO tickets (ticket_id, generation_id, campaign_id, user_email, generated_by, generated_by_nick, created_by_user_id, tx_id, name, mobile, address, total_tickets_in_tx, person_ticket_index, template_qr_enabled, template_watermark_enabled, template_color_mode, template_company_phone, template_company_email, template_company_website) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     const updateCounter = db.prepare('UPDATE campaigns SET counter = ? WHERE id = ?');
 
     let campaign = db.prepare('SELECT counter FROM campaigns WHERE id = ?').get(campaignId) as any;
@@ -1007,8 +1040,8 @@ async function startServer() {
       currentCounter++;
       const ticketId = `${prefix}${String(currentCounter).padStart(4, '0')}`;
       const currentIndex = count > 1 ? i + 1 : personIndex;
-      insertTicket.run(ticketId, generationId, campaignId, userEmail, generatedBy, generatedByNick, generatedBy, txId, name, mobile, address, totalTickets, currentIndex);
-      
+      insertTicket.run(ticketId, generationId, campaignId, userEmail, generatedBy, generatedByNick, generatedBy, txId, name, mobile, address, totalTickets, currentIndex, tplQR, tplWatermark, tplColorMode, tplPhone, tplEmail, tplWebsite);
+
       db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
         'Create Ticket',
         `Ticket ID: ${ticketId}, GenID: ${generationId}, TxID: ${txId}`,
@@ -1062,9 +1095,9 @@ async function startServer() {
           'Approve Transaction', `Transaction ${tx.tx_id} approved and tickets generated`, currentUser.email
         );
 
-        // Auto-create account transaction (Cash In from ticket sale)
+        // Auto-create account transaction (Cash In from ticket sale) + receipt
         try {
-          db.prepare(`
+          const acctResult2 = db.prepare(`
             INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id, user_email)
             VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?, ?)
           `).run(
@@ -1076,6 +1109,7 @@ async function startServer() {
             tx.tx_id,
             tx.user_email
           );
+          autoGenerateReceipt(acctResult2.lastInsertRowid as number, currentUser.email);
         } catch (accErr) {
           console.error('Account TX creation failed (non-critical):', accErr);
         }
@@ -1732,12 +1766,13 @@ async function startServer() {
           }
         }
 
-        // Auto-create account transaction
+        // Auto-create account transaction + receipt
         try {
-          db.prepare(`
+          const acctResult3 = db.prepare(`
             INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, linked_tx_id, user_email)
             VALUES ('Cash In', ?, 'Ticket Sales', ?, ?, date('now'), ?, 'Approved', 'System', ?, datetime('now'), ?, ?)
           `).run(tx.amount, tx.payment_type || 'Cash', `KARTAL MART ticket sale — TX: ${tx.tx_id} | ${tx.name}`, tx.user_email, u.email, tx.tx_id, tx.user_email);
+          autoGenerateReceipt(acctResult3.lastInsertRowid as number, u.email);
         } catch (accErr) { console.error('Flow2 account TX error:', accErr); }
 
         db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run(
@@ -1819,6 +1854,10 @@ async function startServer() {
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?, ?, ?)').run(
       'Account Transaction', `${type} PKR ${amount} [${category}] - ${description}`, u.email
     );
+    // Auto-generate receipt for approved transactions
+    if (status === 'Approved') {
+      autoGenerateReceipt(r.lastInsertRowid as number, u.email);
+    }
     res.json({ id: r.lastInsertRowid, status });
   });
 
@@ -1942,6 +1981,8 @@ async function startServer() {
         .run(amount, `Cash transfer to ${to_user}`, from_user, u.email, from_user);
       db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, approved_by, approved_at, user_email) VALUES ('Cash In',?,'Cash Transfer','Transfer In',?,date('now'),?,'Approved','System',?,datetime('now'),?)`)
         .run(amount, `Cash transfer from ${from_user}`, from_user, u.email, to_user);
+      // Auto-generate receipt for transfer
+      autoGenerateTransferReceipt(r.lastInsertRowid as number, u.email);
     }
     db.prepare('INSERT INTO audit_logs (action, details, user_email) VALUES (?,?,?)').run('Cash Transfer', `PKR ${amount} from ${from_user} to ${to_user} [${status}]`, u.email);
     // Notifications
@@ -2119,6 +2160,8 @@ async function startServer() {
         const acctType = type === 'Loan Repayment' ? 'Cash In' : 'Cash Out';
         db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES (?, ?, ?, ?, ?, date('now'), ?, 'Approved', 'System', ?)`)
           .run(acctType, amount, type === 'Loan Repayment' ? 'Other Income' : 'Salaries', type, `${type}: ${description || user_email}${month ? ' (' + month + ')' : ''}`, req.user.email, user_email);
+        // Auto-generate receipt for salary transaction
+        autoGenerateSalaryReceipt(result.lastInsertRowid as number, req.user.email);
       }
       res.json({ success: true, id: result.lastInsertRowid });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -2197,11 +2240,13 @@ async function startServer() {
         // Check if already paid for this month
         const existing = db.prepare("SELECT id FROM salary_transactions WHERE user_email=? AND type='Salary' AND month=? AND status != 'Rejected'").get(cfg.user_email, month);
         if (existing) { skipped++; continue; }
-        db.prepare('INSERT INTO salary_transactions (user_email, type, amount, month, description, status, approved_by, approved_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        const salResult = db.prepare('INSERT INTO salary_transactions (user_email, type, amount, month, description, status, approved_by, approved_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .run(cfg.user_email, 'Salary', cfg.monthly_salary, month, `Monthly salary for ${month}`, 'Approved', req.user.email, new Date().toISOString(), req.user.email);
-        // Create Cash Out account transaction
+        // Create Cash Out account transaction — attribute to employee
         db.prepare(`INSERT INTO account_transactions (type, amount, category, subcategory, description, date, created_by, status, source, user_email) VALUES ('Cash Out', ?, 'Salaries', 'Salary', ?, date('now'), ?, 'Approved', 'System', ?)`)
-          .run(cfg.monthly_salary, `Monthly salary for ${month}: ${cfg.user_email}`, req.user.email, req.user.email);
+          .run(cfg.monthly_salary, `Monthly salary for ${month}: ${cfg.user_email}`, req.user.email, cfg.user_email);
+        // Auto-generate receipt
+        autoGenerateSalaryReceipt(salResult.lastInsertRowid as number, req.user.email);
         processed++;
       }
       res.json({ success: true, processed, skipped, total: configs.length });
@@ -2601,6 +2646,45 @@ async function startServer() {
     created_by TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+
+  // Auto-generate receipt for any account_transaction (idempotent — skips if receipt already exists)
+  function autoGenerateReceipt(accountTxId: number, createdBy: string) {
+    try {
+      const tx = db.prepare('SELECT * FROM account_transactions WHERE id = ?').get(accountTxId) as any;
+      if (!tx) return;
+      const existing = db.prepare("SELECT id FROM receipts WHERE reference_type='account_tx' AND reference_id=?").get(tx.id) as any;
+      if (existing) return; // Already has a receipt
+      const receipt_number = getNextReceiptNumber();
+      const from = tx.type === 'Cash In' ? (tx.source || 'External') : (tx.user_email || createdBy);
+      const to = tx.type === 'Cash In' ? (tx.user_email || createdBy) : (tx.category || 'External');
+      db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, tx.type, 'account_tx', tx.id, from, to, tx.amount, tx.description || `${tx.type} - ${tx.category}`, 'Cash', createdBy);
+    } catch (e) { /* receipt generation is non-critical, don't break the main flow */ }
+  }
+
+  function autoGenerateTransferReceipt(transferId: number, createdBy: string) {
+    try {
+      const tr = db.prepare('SELECT * FROM cash_transfers WHERE id = ?').get(transferId) as any;
+      if (!tr) return;
+      const existing = db.prepare("SELECT id FROM receipts WHERE reference_type='transfer' AND reference_id=?").get(tr.id) as any;
+      if (existing) return;
+      const receipt_number = getNextReceiptNumber();
+      db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, 'Cash Transfer', 'transfer', tr.id, tr.from_user, tr.to_user, tr.amount, tr.description || 'Cash transfer', 'Cash', createdBy);
+    } catch (e) { /* non-critical */ }
+  }
+
+  function autoGenerateSalaryReceipt(salaryTxId: number, createdBy: string) {
+    try {
+      const tx = db.prepare('SELECT * FROM salary_transactions WHERE id = ?').get(salaryTxId) as any;
+      if (!tx) return;
+      const existing = db.prepare("SELECT id FROM receipts WHERE reference_type='salary' AND reference_id=?").get(tx.id) as any;
+      if (existing) return;
+      const receipt_number = getNextReceiptNumber();
+      db.prepare('INSERT INTO receipts (receipt_number, type, reference_type, reference_id, from_party, to_party, amount, description, payment_method, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(receipt_number, tx.type === 'Salary' ? 'Salary Payment' : tx.type, 'salary', tx.id, 'Company', tx.user_email, tx.amount, tx.description || `${tx.type} for ${tx.month || 'N/A'}`, 'Cash', createdBy);
+    } catch (e) { /* non-critical */ }
+  }
 
   function getNextReceiptNumber(): string {
     const year = new Date().getFullYear();
