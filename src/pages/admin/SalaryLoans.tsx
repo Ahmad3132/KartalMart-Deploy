@@ -1,6 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { DollarSign, Plus, Check, X, ChevronDown, Users, Banknote, CreditCard, FileText, Play } from 'lucide-react';
 import { formatPKR } from '../../utils/api';
+
+// Separate component to avoid useState inside map
+function SalaryRow({ u, cfg, isAdmin, onSave }: { u: any; cfg: any; isAdmin: boolean; onSave: (email: string, salary: number) => void }) {
+  const [editVal, setEditVal] = useState(cfg?.monthly_salary?.toString() || '0');
+  return (
+    <tr className="border-t border-gray-50 hover:bg-gray-50">
+      <td className="px-5 py-3">
+        <div className="font-medium text-gray-900">{u.name || u.email}</div>
+        <div className="text-xs text-gray-400">{u.email}</div>
+      </td>
+      <td className="px-5 py-3">
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : u.role === 'Accountant' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span>
+      </td>
+      <td className="px-5 py-3">
+        {isAdmin ? (
+          <input type="number" value={editVal} onChange={e => setEditVal(e.target.value)}
+            className="w-32 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
+        ) : (
+          <span className="font-semibold">{formatPKR(cfg?.monthly_salary || 0)}</span>
+        )}
+      </td>
+      {isAdmin && (
+        <td className="px-5 py-3">
+          <button onClick={() => onSave(u.email, parseFloat(editVal) || 0)}
+            className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700">
+            Save
+          </button>
+        </td>
+      )}
+    </tr>
+  );
+}
 
 type Tab = 'setup' | 'payroll' | 'advances' | 'loans' | 'summary';
 
@@ -166,34 +198,7 @@ export default function SalaryLoans() {
                 <tbody>
                   {users.map(u => {
                     const cfg = configs.find((c: any) => c.user_email === u.email);
-                    const [editVal, setEditVal] = useState(cfg?.monthly_salary?.toString() || '0');
-                    return (
-                      <tr key={u.email} className="border-t border-gray-50 hover:bg-gray-50">
-                        <td className="px-5 py-3">
-                          <div className="font-medium text-gray-900">{u.name || u.email}</div>
-                          <div className="text-xs text-gray-400">{u.email}</div>
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : u.role === 'Accountant' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{u.role}</span>
-                        </td>
-                        <td className="px-5 py-3">
-                          {isAdmin ? (
-                            <input type="number" value={editVal} onChange={e => setEditVal(e.target.value)}
-                              className="w-32 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" />
-                          ) : (
-                            <span className="font-semibold">{formatPKR(cfg?.monthly_salary || 0)}</span>
-                          )}
-                        </td>
-                        {isAdmin && (
-                          <td className="px-5 py-3">
-                            <button onClick={() => saveSalaryConfig(u.email, parseFloat(editVal) || 0)}
-                              className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700">
-                              Save
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
+                    return <SalaryRow key={u.email} u={u} cfg={cfg} isAdmin={isAdmin} onSave={saveSalaryConfig} />;
                   })}
                 </tbody>
               </table>
