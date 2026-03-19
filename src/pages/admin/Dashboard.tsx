@@ -176,44 +176,120 @@ export default function AdminDashboard() {
     try {
       const res = await fetch(`/api/tickets/${ticket.id}/print`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('kartal_token')}`
         },
         body: JSON.stringify({ user_email: user?.email, role: user?.role }),
       });
-      
+
       await handleResponse(res);
       fetchData();
 
-      // Open thermal print window
+      // Use saved template settings from ticket, fall back to defaults
+      const tQR = ticket.template_qr_enabled != null ? ticket.template_qr_enabled !== 'false' : true;
+      const tWatermark = ticket.template_watermark_enabled != null ? ticket.template_watermark_enabled === 'true' : false;
+      const tColorMode = ticket.template_color_mode || 'color';
+      const tPhone = ticket.template_company_phone || '';
+      const tEmail = ticket.template_company_email || '';
+      const tWebsite = ticket.template_company_website || '';
+      const isBW = tColorMode === 'bw';
+      const hasContact = tPhone || tEmail || tWebsite;
+
+      // Get logo as base64
+      const logoEl = document.querySelector('img[alt="Kartal"]') as HTMLImageElement | null;
+      let logoB64 = '';
+      if (logoEl?.src) {
+        try {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          await new Promise<void>((resolve) => {
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              canvas.getContext('2d')?.drawImage(img, 0, 0);
+              logoB64 = canvas.toDataURL('image/png');
+              resolve();
+            };
+            img.onerror = () => resolve();
+            img.src = logoEl.src;
+          });
+        } catch {}
+      }
+
       const win = window.open('', '_blank', 'width=420,height=700,menubar=no,toolbar=no');
       if (!win) { window.print(); return; }
+
       const date = new Date(ticket.date).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      const time = new Date(ticket.date).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true });
+      const mobile = ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : '';
+      const logoTag = logoB64 ? `<img src="${logoB64}" style="width:22mm;height:16mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">` : '';
+      const qrData = JSON.stringify({ id: ticket.ticket_id, name: ticket.name, tx: ticket.tx_id, gen: ticket.generation_id });
+
+      const contactSection = hasContact ? `
+        <div style="border-top:1px dashed #999;margin-top:1.5mm;padding-top:1.5mm;text-align:center;font-size:7px;color:#666;line-height:1.6;">
+          ${tPhone ? `<div>📞 ${tPhone}</div>` : ''}
+          ${tEmail ? `<div>✉ ${tEmail}</div>` : ''}
+          ${tWebsite ? `<div>🌐 ${tWebsite}</div>` : ''}
+        </div>` : '';
+
+      const watermarkSection = tWatermark ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:10px;color:rgba(200,200,200,0.5);white-space:nowrap;pointer-events:none;z-index:10;">${new Date(ticket.date).toLocaleString('en-PK',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>` : '';
+
       win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Print Ticket</title>
-<style>* { margin:0;padding:0;box-sizing:border-box; } @page { size:80mm auto;margin:2mm; } html,body{width:80mm;background:#fff;} body{display:flex;flex-direction:column;align-items:center;padding:2mm;}</style>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"><\/script>
+<style>* { margin:0;padding:0;box-sizing:border-box; } @page { size:80mm auto;margin:2mm; } html,body{width:80mm;background:#fff;} body{display:flex;flex-direction:column;align-items:center;padding:2mm;} @media screen{body{background:#e0e0e0;padding:10px;}}</style>
 </head><body>
-<div style="width:72mm;font-family:'Courier New',monospace;font-size:11px;color:#000;padding:3mm;">
+<div style="position:relative;width:72mm;font-family:'Courier New',monospace;font-size:11px;color:#000;padding:3mm;overflow:hidden;">
+  ${watermarkSection}
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
-    <div style="text-align:right;margin-left:auto;">
+    ${logoTag}
+    <div style="text-align:right;">
       <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
       <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
     </div>
   </div>
   <div style="text-align:center;background:#000;color:#fff;padding:1.5mm;margin-bottom:1.5mm;">
     <div style="font-size:7px;letter-spacing:2px;">TICKET NUMBER</div>
-    <div style="font-size:20px;font-weight:900;letter-spacing:3px;">${ticket.ticket_id}</div>
+    <div style="font-size:20px;font-weight:900;letter-spacing:3px;line-height:1.1;">${ticket.ticket_id}</div>
   </div>
   <div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:1.5mm 0;margin-bottom:1.5mm;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Name:</span><span style="font-weight:900;font-size:10px;">${ticket.name}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Mobile:</span><span style="font-size:10px;">${ticket.mobile ? ticket.mobile.slice(0, -3) + '***' : ''}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Name:</span><span style="font-weight:900;font-size:10px;text-align:right;">${ticket.name}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Mobile:</span><span style="font-weight:600;font-size:10px;">${mobile}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Address:</span><span style="font-size:8px;text-align:right;max-width:45mm;">${ticket.address || 'N/A'}</span></div>
   </div>
-  <div style="padding:1mm 0;font-size:8px;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;">TX ID:</span><span style="font-family:monospace;">${ticket.tx_id}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span style="color:#555;">Date:</span><span>${date}</span></div>
+  <div style="padding:1mm 0;margin-bottom:1.5mm;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">TX ID:</span><span style="font-family:monospace;font-size:8px;">${ticket.tx_id}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Date:</span><span style="font-size:8px;">${date} ${time}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Ticket:</span><span style="font-size:8px;">${ticket.person_ticket_index} of ${ticket.total_tickets_in_tx}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:0.5mm;"><span style="color:#555;font-size:8px;">Gen. by:</span><span style="font-size:8px;">${ticket.generated_by_nick || ticket.generated_by || ''}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span style="color:#555;font-size:8px;">Print by:</span><span style="font-size:8px;">${ticket.last_printed_by_nick || ticket.generated_by_nick || ''}</span></div>
   </div>
+  ${tQR ? `<div class="qr-container" style="text-align:center;margin:1.5mm 0;">
+    <div style="display:inline-block;border:1px solid #000;padding:1.5mm;">
+      <canvas class="qr-canvas" data-qr='${qrData.replace(/'/g, "&#39;")}' width="90" height="90"></canvas>
+    </div>
+    <div style="font-size:9px;margin-top:1.5mm;font-family:'Noto Nastaliq Urdu',serif;direction:rtl;line-height:1.6;">تصدیق کے لیے اسکین کریں</div>
+  </div>` : ''}
+  ${contactSection}
 </div>
-<script>window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close();},1500);},300);};</script>
+<script>
+function renderAndPrint() {
+  var canvases = document.querySelectorAll('.qr-canvas');
+  var rendered = 0, total = canvases.length;
+  function doPrint() { setTimeout(function(){ window.focus(); window.print(); setTimeout(function(){ window.close(); },1500); },600); }
+  if (total === 0) { doPrint(); return; }
+  canvases.forEach(function(canvas) {
+    var data = canvas.getAttribute('data-qr');
+    if (data && typeof QRCode !== 'undefined') {
+      QRCode.toCanvas(canvas, data, { width: 90, margin: 0, errorCorrectionLevel: 'H' }, function() { rendered++; if (rendered >= total) doPrint(); });
+    } else { rendered++; if (rendered >= total) doPrint(); }
+  });
+}
+function waitForQR(a) { if (typeof QRCode !== 'undefined') { renderAndPrint(); return; } if (a > 50) { renderAndPrint(); return; } setTimeout(function(){ waitForQR(a+1); }, 100); }
+window.onload = function() { waitForQR(0); };
+<\/script>
 </body></html>`);
       win.document.close();
     } catch (err: any) {
