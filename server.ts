@@ -353,6 +353,32 @@ for (const m of migrations) {
   }
 }
 
+// ── Performance indexes ─────────────────────────────────────────────────
+// These dramatically speed up dashboard stats, ticket lookups, and reports.
+const indexes = [
+  'CREATE INDEX IF NOT EXISTS idx_tickets_date ON tickets(date)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_user_email ON tickets(user_email)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_ticket_id ON tickets(ticket_id)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_tx_id ON tickets(tx_id)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_campaign_id ON tickets(campaign_id)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_mobile ON tickets(mobile)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_user_email ON transactions(user_email)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_tx_id ON transactions(tx_id)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)',
+  'CREATE INDEX IF NOT EXISTS idx_account_transactions_user_email ON account_transactions(user_email)',
+  'CREATE INDEX IF NOT EXISTS idx_account_transactions_date ON account_transactions(date)',
+  'CREATE INDEX IF NOT EXISTS idx_salary_transactions_user_email ON salary_transactions(user_email)',
+  'CREATE INDEX IF NOT EXISTS idx_cash_transfers_from ON cash_transfers(from_user)',
+  'CREATE INDEX IF NOT EXISTS idx_cash_transfers_to ON cash_transfers(to_user)',
+  'CREATE INDEX IF NOT EXISTS idx_customer_tags_mobile ON customer_tags(mobile)',
+  'CREATE INDEX IF NOT EXISTS idx_audit_logs_user_email ON audit_logs(user_email)',
+  'CREATE INDEX IF NOT EXISTS idx_sms_logs_campaign_id ON sms_logs(campaign_id)',
+];
+for (const idx of indexes) {
+  try { db.exec(idx); } catch (e) { /* table may not exist yet */ }
+}
+
 // Seed initial data
 const seedUsers = db.prepare('SELECT count(*) as count FROM users').get() as { count: number };
 if (seedUsers.count === 0) {
@@ -1632,23 +1658,27 @@ async function startServer() {
   // Dashboard Stats
   app.get('/api/stats/admin', authenticateToken, (req, res) => {
     try {
-      const activeCampaign = db.prepare("SELECT name FROM campaigns WHERE status = 'Active'").get() as any;
       const todayStr = new Date().toISOString().split('T')[0];
       const monthStr = todayStr.substring(0, 7);
-      
-      const ticketsToday = (db.prepare('SELECT count(*) as c FROM tickets WHERE date LIKE ?').get(todayStr + '%') as any)?.c || 0;
-      const ticketsMonth = (db.prepare('SELECT count(*) as c FROM tickets WHERE date LIKE ?').get(monthStr + '%') as any)?.c || 0;
-      const pendingApprovals = (db.prepare("SELECT count(*) as c FROM transactions WHERE status = 'Pending'").get() as any)?.c || 0;
-      const totalRevenue = (db.prepare("SELECT sum(amount) as s FROM transactions WHERE status = 'Generated'").get() as any)?.s || 0;
-      const totalUsers = (db.prepare("SELECT count(*) as c FROM users WHERE role = 'User'").get() as any)?.c || 0;
+
+      // Single combined query for all dashboard stats (replaces 6 separate queries)
+      const stats = db.prepare(`
+        SELECT
+          (SELECT name FROM campaigns WHERE status = 'Active' LIMIT 1) as activeCampaign,
+          (SELECT count(*) FROM tickets WHERE date >= ?) as ticketsToday,
+          (SELECT count(*) FROM tickets WHERE date >= ?) as ticketsMonth,
+          (SELECT count(*) FROM transactions WHERE status = 'Pending') as pendingApprovals,
+          (SELECT COALESCE(sum(amount), 0) FROM transactions WHERE status = 'Generated') as totalRevenue,
+          (SELECT count(*) FROM users WHERE role = 'User') as totalUsers
+      `).get(todayStr, monthStr + '-01') as any;
 
       res.json({
-        activeCampaign: activeCampaign ? activeCampaign.name : 'None',
-        ticketsToday,
-        ticketsMonth,
-        pendingApprovals,
-        totalRevenue,
-        totalUsers
+        activeCampaign: stats.activeCampaign || 'None',
+        ticketsToday: stats.ticketsToday || 0,
+        ticketsMonth: stats.ticketsMonth || 0,
+        pendingApprovals: stats.pendingApprovals || 0,
+        totalRevenue: stats.totalRevenue || 0,
+        totalUsers: stats.totalUsers || 0
       });
     } catch (err: any) {
       console.error('Error fetching admin stats:', err);
@@ -1661,17 +1691,21 @@ async function startServer() {
       const { email } = req.params;
       const todayStr = new Date().toISOString().split('T')[0];
       const monthStr = todayStr.substring(0, 7);
-      
-      const ticketsToday = (db.prepare('SELECT count(*) as c FROM tickets WHERE user_email = ? AND date LIKE ?').get(email, todayStr + '%') as any)?.c || 0;
-      const ticketsMonth = (db.prepare('SELECT count(*) as c FROM tickets WHERE user_email = ? AND date LIKE ?').get(email, monthStr + '%') as any)?.c || 0;
-      const pendingTxs = (db.prepare("SELECT count(*) as c FROM transactions WHERE user_email = ? AND status = 'Pending'").get(email) as any)?.c || 0;
-      const approvedTxs = (db.prepare("SELECT count(*) as c FROM transactions WHERE user_email = ? AND status = 'Generated'").get(email) as any)?.c || 0;
+
+      // Single combined query for all user stats (replaces 4 separate queries)
+      const stats = db.prepare(`
+        SELECT
+          (SELECT count(*) FROM tickets WHERE user_email = ? AND date >= ?) as ticketsToday,
+          (SELECT count(*) FROM tickets WHERE user_email = ? AND date >= ?) as ticketsMonth,
+          (SELECT count(*) FROM transactions WHERE user_email = ? AND status = 'Pending') as pendingTxs,
+          (SELECT count(*) FROM transactions WHERE user_email = ? AND status = 'Generated') as approvedTxs
+      `).get(email, todayStr, email, monthStr + '-01', email, email) as any;
 
       res.json({
-        ticketsToday,
-        ticketsMonth,
-        pendingTxs,
-        approvedTxs
+        ticketsToday: stats.ticketsToday || 0,
+        ticketsMonth: stats.ticketsMonth || 0,
+        pendingTxs: stats.pendingTxs || 0,
+        approvedTxs: stats.approvedTxs || 0
       });
     } catch (err: any) {
       console.error('Error fetching user stats:', err);
@@ -2879,19 +2913,21 @@ async function startServer() {
   app.get('/api/customers/loyalty/summary', authenticateToken, (req: any, res: any) => {
     try {
       const customers = db.prepare(`
-        SELECT mobile, name, count(*) as ticket_count, sum(t.amount) as total_spent,
-               max(tk.date) as last_purchase, min(tk.date) as first_purchase
+        SELECT tk.mobile, tk.name, count(*) as ticket_count, sum(t.amount) as total_spent,
+               max(tk.date) as last_purchase, min(tk.date) as first_purchase,
+               COALESCE(GROUP_CONCAT(DISTINCT ct.tag), '') as tags_csv
         FROM tickets tk
         LEFT JOIN transactions t ON tk.tx_id = t.tx_id
-        GROUP BY mobile
+        LEFT JOIN customer_tags ct ON tk.mobile = ct.mobile
+        GROUP BY tk.mobile
         HAVING ticket_count > 0
         ORDER BY ticket_count DESC
         LIMIT 100
       `).all();
 
-      // Add tags
+      // Parse tags from GROUP_CONCAT (no more N+1 queries)
       const result = (customers as any[]).map((c: any) => {
-        const tags = db.prepare('SELECT tag FROM customer_tags WHERE mobile = ?').all(c.mobile).map((t: any) => t.tag);
+        const tags = c.tags_csv ? c.tags_csv.split(',').filter(Boolean) : [];
         return { ...c, tags, isVIP: tags.includes('VIP'), isRepeat: c.ticket_count > 1 };
       });
 
