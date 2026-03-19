@@ -1,6 +1,5 @@
 console.log('Starting server.ts...');
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import fs from 'fs';
+// Vite is dynamically imported only in dev mode (see startServer)
 
 console.log('Imports successful');
 
@@ -450,6 +450,16 @@ if (seedPackages.count === 0) {
   insertPackage.run('Premium Package', 100, 15, 'Active');
 }
 
+// Seed a default campaign so the app works immediately on first deploy
+const seedCampaigns = db.prepare('SELECT count(*) as count FROM campaigns').get() as { count: number };
+if (seedCampaigns.count === 0) {
+  const today = new Date().toISOString().split('T')[0];
+  const endDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  db.prepare('INSERT INTO campaigns (name, start_date, end_date, counter, status) VALUES (?, ?, ?, ?, ?)')
+    .run('Default Campaign', today, endDate, 0, 'Active');
+  console.log('Seeded default active campaign');
+}
+
 const seedSettings = db.prepare('SELECT count(*) as count FROM settings').get() as { count: number };
 if (seedSettings.count === 0) {
   db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('require_all_approvals', 'false');
@@ -476,6 +486,17 @@ db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run('wor
 async function startServer() {
   console.log('Initializing startServer...');
   console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('Database path:', dbPath);
+  console.log('Database exists:', fs.existsSync(dbPath));
+
+  // Verify database is working
+  const dbCheck = db.prepare('SELECT count(*) as c FROM packages').get() as any;
+  console.log('Packages in DB:', dbCheck?.c || 0);
+  const campCheck = db.prepare('SELECT count(*) as c FROM campaigns').get() as any;
+  console.log('Campaigns in DB:', campCheck?.c || 0);
+  const userCheck = db.prepare('SELECT count(*) as c FROM users').get() as any;
+  console.log('Users in DB:', userCheck?.c || 0);
+
   const app = express();
   const PORT = process.env.PORT || 3000;
 
@@ -2950,13 +2971,23 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
+  // Serve frontend — Vite dev server in dev mode, static files in production
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+      console.log('Vite dev server middleware enabled');
+    } catch (e) {
+      console.warn('Vite not available, falling back to static files');
+      app.use(express.static(path.join(__dirname, 'dist')));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      });
+    }
   } else {
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req, res) => {

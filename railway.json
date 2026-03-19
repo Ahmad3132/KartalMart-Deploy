@@ -5,8 +5,9 @@
     "buildCommand": "npm install && npm run build"
   },
   "deploy": {
-    "startCommand": "npx tsx server.ts",
+    "startCommand": "NODE_ENV=production npx tsx server.ts",
+    "healthcheckPath": "/api/ping",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
+    "restartPolicyMaxRetries": 10
   }
 }
