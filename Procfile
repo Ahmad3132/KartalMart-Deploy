@@ -1,1 +1,1 @@
-web: npx tsx server.ts
+web: NODE_ENV=production tsx server.ts
