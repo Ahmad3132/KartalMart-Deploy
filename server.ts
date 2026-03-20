@@ -2409,6 +2409,7 @@ async function startServer() {
   // ════════════════════════════════════════════
   // DATABASE BACKUP
   // ════════════════════════════════════════════
+  // Download database backup (.db file)
   app.get('/api/admin/backup', authenticateToken, (req: any, res: any) => {
     if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
     try {
@@ -2419,6 +2420,57 @@ async function startServer() {
           if (err && !res.headersSent) res.status(500).json({ error: 'Download failed' });
         });
       }).catch((e: any) => res.status(500).json({ error: e.message }));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Download full data export as JSON (all tables)
+  app.get('/api/admin/export', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        users: db.prepare('SELECT email, name, nick_name, role, status, created_at FROM users').all(),
+        campaigns: db.prepare('SELECT * FROM campaigns').all(),
+        packages: db.prepare('SELECT * FROM packages').all(),
+        transactions: db.prepare('SELECT * FROM transactions').all(),
+        tickets: db.prepare('SELECT * FROM tickets').all(),
+        customerTags: db.prepare('SELECT * FROM customer_tags').all(),
+        coupons: db.prepare('SELECT * FROM coupons').all(),
+      };
+      const fileName = `kartal-export-${new Date().toISOString().slice(0,10)}.json`;
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('Content-Type', 'application/json');
+      res.send(JSON.stringify(exportData, null, 2));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Get backup status and list of server-side backups
+  app.get('/api/admin/backup/status', authenticateToken, (req: any, res: any) => {
+    if (req.user.role !== 'Admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+      const backupDir = path.join(__dirname, 'backups');
+      let backups: any[] = [];
+      if (fs.existsSync(backupDir)) {
+        backups = fs.readdirSync(backupDir)
+          .filter((f: string) => f.endsWith('.db'))
+          .map((f: string) => {
+            const stat = fs.statSync(path.join(backupDir, f));
+            return { name: f, size: stat.size, date: stat.mtime };
+          })
+          .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      }
+      const dbStat = fs.existsSync(dbPath) ? fs.statSync(dbPath) : null;
+      const stats = {
+        totalUsers: (db.prepare('SELECT count(*) as c FROM users').get() as any).c,
+        totalTickets: (db.prepare('SELECT count(*) as c FROM tickets').get() as any).c,
+        totalTransactions: (db.prepare('SELECT count(*) as c FROM transactions').get() as any).c,
+      };
+      res.json({
+        databaseSize: dbStat ? `${(dbStat.size / 1024 / 1024).toFixed(2)} MB` : 'N/A',
+        lastModified: dbStat ? dbStat.mtime : null,
+        serverBackups: backups.slice(0, 10),
+        stats,
+      });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
