@@ -1,4 +1,6 @@
 console.log('Starting server.ts...');
+import dotenv from 'dotenv';
+dotenv.config();
 import express from 'express';
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -11,7 +13,13 @@ import fs from 'fs';
 
 console.log('Imports successful');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'lucky-draw-secret-key';
+// SECURITY: JWT secret must be set via environment variable in production
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  const fallback = 'kartalMart-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  console.warn('WARNING: JWT_SECRET not set in .env — using random fallback (tokens will invalidate on restart)');
+  return fallback;
+})();
+const ADMIN_RESET_SECRET = process.env.ADMIN_RESET_SECRET || 'kartal-reset-2024';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,7 +45,19 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+// File upload with security: max 5MB, images only
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files (JPEG, PNG, GIF, WEBP) are allowed'));
+    }
+  }
+});
 
 // Initialize Database Schema
 db.exec(`
@@ -374,6 +394,14 @@ const indexes = [
   'CREATE INDEX IF NOT EXISTS idx_customer_tags_mobile ON customer_tags(mobile)',
   'CREATE INDEX IF NOT EXISTS idx_audit_logs_user_email ON audit_logs(user_email)',
   'CREATE INDEX IF NOT EXISTS idx_sms_logs_campaign_id ON sms_logs(campaign_id)',
+  // Composite indexes for common query patterns
+  'CREATE INDEX IF NOT EXISTS idx_transactions_user_status ON transactions(user_email, status)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_user_campaign ON tickets(user_email, campaign_id)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_campaign_id ON transactions(campaign_id)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_package_id ON transactions(package_id)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_mobile_date ON tickets(mobile, date)',
+  'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_email, is_read)',
+  'CREATE INDEX IF NOT EXISTS idx_login_logs_email ON login_logs(user_email, created_at)',
 ];
 for (const idx of indexes) {
   try { db.exec(idx); } catch (e) { /* table may not exist yet */ }
@@ -388,18 +416,18 @@ if (seedUsers.count === 0) {
   insertUser.run('admin@example.com', adminPassword, 'Admin', 'Active');
   insertUser.run('user@example.com', userPassword, 'User', 'Active');
   
-  // Add user's email from context if provided
-  const userEmail = 'Muhammadahmad3132.MA@gmail.com';
-  if (userEmail) {
-    insertUser.run(userEmail, adminPassword, 'Admin', 'Active');
+  // Add owner's email as admin (configurable via OWNER_EMAIL env var)
+  const ownerEmail = process.env.OWNER_EMAIL || 'Muhammadahmad3132.MA@gmail.com';
+  if (ownerEmail) {
+    insertUser.run(ownerEmail, adminPassword, 'Admin', 'Active');
   }
 } else {
-  // Ensure the specific user exists even if already seeded
-  const userEmail = 'Muhammadahmad3132.MA@gmail.com';
-  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(userEmail);
+  // Ensure the owner user exists even if already seeded
+  const ownerEmail = process.env.OWNER_EMAIL || 'Muhammadahmad3132.MA@gmail.com';
+  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(ownerEmail);
   if (!existing) {
     const adminPassword = bcrypt.hashSync('admin123', 10);
-    db.prepare('INSERT INTO users (email, password, role, status) VALUES (?, ?, ?, ?)').run(userEmail, adminPassword, 'Admin', 'Active');
+    db.prepare('INSERT INTO users (email, password, role, status) VALUES (?, ?, ?, ?)').run(ownerEmail, adminPassword, 'Admin', 'Active');
   }
 }
 
@@ -506,6 +534,16 @@ async function startServer() {
 
   app.get('/api/ping', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Health check endpoint (checks DB connectivity)
+  app.get('/api/health', (req, res) => {
+    try {
+      const check = db.prepare('SELECT 1 as ok').get() as any;
+      res.json({ status: 'healthy', database: check?.ok === 1, uptime: process.uptime() });
+    } catch (e: any) {
+      res.status(503).json({ status: 'unhealthy', error: e.message });
+    }
   });
   app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -786,14 +824,36 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // ── Rate limiting for login (brute force protection) ──────────────
+  const loginAttempts = new Map<string, { count: number; lastAttempt: number }>();
+  const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
+  const MAX_ATTEMPTS = 10; // max 10 failed attempts per IP per window
+
+  // Cleanup old entries every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of loginAttempts) {
+      if (now - val.lastAttempt > RATE_LIMIT_WINDOW) loginAttempts.delete(key);
+    }
+  }, 5 * 60 * 1000);
+
   // Auth
   app.post('/api/login', (req: any, res) => {
+    // Rate limit check
+    const clientIp = (req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+    const attempts = loginAttempts.get(clientIp);
+    if (attempts && attempts.count >= MAX_ATTEMPTS && Date.now() - attempts.lastAttempt < RATE_LIMIT_WINDOW) {
+      return res.status(429).json({ error: 'Too many login attempts. Please try again in 15 minutes.' });
+    }
     const { email, password } = req.body;
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '';
     const ua = req.headers['user-agent'] || '';
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
 
     if (!user || !bcrypt.compareSync(password, user.password)) {
+      // Track failed attempts for rate limiting
+      const prev = loginAttempts.get(clientIp) || { count: 0, lastAttempt: 0 };
+      loginAttempts.set(clientIp, { count: prev.count + 1, lastAttempt: Date.now() });
       // Log failed login
       try { db.prepare('INSERT INTO login_logs (user_email, action, ip_address, user_agent, success) VALUES (?, ?, ?, ?, 0)').run(email || 'unknown', 'login', ip, ua); } catch {}
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -802,6 +862,8 @@ async function startServer() {
       return res.status(403).json({ error: 'Account is disabled' });
     }
 
+    // Clear rate limit on successful login
+    loginAttempts.delete(clientIp);
     // Log successful login
     try { db.prepare('INSERT INTO login_logs (user_email, action, ip_address, user_agent, success) VALUES (?, ?, ?, ?, 1)').run(email, 'login', ip, ua); } catch {}
 
@@ -820,7 +882,7 @@ async function startServer() {
   app.post('/api/reset-admin-password', (req: any, res) => {
     const { secret } = req.body;
     // Simple secret key to prevent random resets — user must know this
-    if (secret !== 'kartal-reset-2024') {
+    if (secret !== ADMIN_RESET_SECRET) {
       return res.status(403).json({ error: 'Invalid reset secret' });
     }
     const admin = db.prepare('SELECT email FROM users WHERE role = ? LIMIT 1').get('Admin') as any;
@@ -931,12 +993,17 @@ async function startServer() {
     
     const campaign = db.prepare("SELECT * FROM campaigns WHERE status = 'Active'").get() as any;
     if (!campaign) {
-      return res.status(400).json({ error: 'No active campaign found' });
+      return res.status(400).json({ error: 'No active campaign found. Please ask admin to activate a campaign.' });
     }
 
     const pkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(package_id) as any;
     if (!pkg) {
       return res.status(400).json({ error: 'Invalid package' });
+    }
+
+    // Validate amount is positive
+    if (pkg.amount <= 0) {
+      return res.status(400).json({ error: 'Package amount must be positive' });
     }
 
     const userSettings = db.prepare('SELECT whatsapp_integration_enabled, multi_person_logic_enabled, duplicate_tx_enabled, require_all_approvals FROM users WHERE email = ?').get(currentUser.email) as any;
@@ -1478,17 +1545,18 @@ async function startServer() {
     const { search = '' } = req.query;
     
     const customers = db.prepare(`
-      SELECT 
-        mobile,
-        name,
-        address,
-        COUNT(DISTINCT tx_id) as total_transactions,
-        COUNT(id) as total_tickets,
-        SUM(CASE WHEN person_ticket_index = 1 THEN (SELECT amount FROM transactions WHERE tx_id = tickets.tx_id) ELSE 0 END) as total_spent,
-        MAX(date) as last_visit
-      FROM tickets
-      WHERE name LIKE ? OR mobile LIKE ? OR address LIKE ?
-      GROUP BY mobile
+      SELECT
+        tk.mobile,
+        tk.name,
+        tk.address,
+        COUNT(DISTINCT tk.tx_id) as total_transactions,
+        COUNT(tk.id) as total_tickets,
+        COALESCE(SUM(CASE WHEN tk.person_ticket_index = 1 THEN tr.amount ELSE 0 END), 0) as total_spent,
+        MAX(tk.date) as last_visit
+      FROM tickets tk
+      LEFT JOIN transactions tr ON tk.tx_id = tr.tx_id
+      WHERE tk.name LIKE ? OR tk.mobile LIKE ? OR tk.address LIKE ?
+      GROUP BY tk.mobile
       ORDER BY last_visit DESC
     `).all(`%${search}%`, `%${search}%`, `%${search}%`);
 
@@ -1501,16 +1569,17 @@ async function startServer() {
     const { mobile } = req.params;
     
     const customer = db.prepare(`
-      SELECT 
-        mobile,
-        name,
-        address,
-        COUNT(DISTINCT tx_id) as total_transactions,
-        COUNT(id) as total_tickets,
-        SUM(CASE WHEN person_ticket_index = 1 THEN (SELECT amount FROM transactions WHERE tx_id = tickets.tx_id) ELSE 0 END) as total_spent
-      FROM tickets
-      WHERE mobile = ?
-      GROUP BY mobile
+      SELECT
+        tk.mobile,
+        tk.name,
+        tk.address,
+        COUNT(DISTINCT tk.tx_id) as total_transactions,
+        COUNT(tk.id) as total_tickets,
+        COALESCE(SUM(CASE WHEN tk.person_ticket_index = 1 THEN tr.amount ELSE 0 END), 0) as total_spent
+      FROM tickets tk
+      LEFT JOIN transactions tr ON tk.tx_id = tr.tx_id
+      WHERE tk.mobile = ?
+      GROUP BY tk.mobile
     `).get(mobile);
 
     const history = db.prepare(`
@@ -2917,6 +2986,17 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Delete old read notifications (cleanup)
+  app.delete('/api/notifications/cleanup', authenticateToken, (req: any, res: any) => {
+    const result = db.prepare('DELETE FROM notifications WHERE user_email = ? AND is_read = 1 AND created_at < datetime("now", "-30 days")').run(req.user.email);
+    res.json({ success: true, deleted: result.changes });
+  });
+
+  // Auto-purge old notifications (runs on server start, deletes >90 days old)
+  try {
+    db.prepare('DELETE FROM notifications WHERE is_read = 1 AND created_at < datetime("now", "-90 days")').run();
+  } catch {}
+
   // ════════════════════════════════════════════
   // LOGIN LOGGING & AUDIT
   // ════════════════════════════════════════════
@@ -3056,3 +3136,13 @@ startServer().catch(err => {
   console.error('CRITICAL: Failed to start server:', err);
   process.exit(1);
 });
+
+// Graceful shutdown — close database properly on SIGTERM/SIGINT
+function gracefulShutdown(signal: string) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  try { db.close(); } catch {}
+  console.log('Database closed. Goodbye!');
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
