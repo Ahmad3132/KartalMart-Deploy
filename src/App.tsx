@@ -1,0 +1,96 @@
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Login from './pages/Login';
+import AdminLayout from './layouts/AdminLayout';
+import UserLayout from './layouts/UserLayout';
+import AdminDashboard from './pages/admin/Dashboard';
+import CampaignSetup from './pages/admin/CampaignSetup';
+import PackageSetup from './pages/admin/PackageSetup';
+import PendingApprovals from './pages/admin/PendingApprovals';
+import Reports from './pages/admin/Reports';
+import AuditLogs from './pages/admin/AuditLogs';
+import Settings from './pages/admin/Settings';
+import Accounts from './pages/admin/Accounts';
+import UserDashboard from './pages/user/Dashboard';
+import GenerateTicket from './pages/user/GenerateTicket';
+import MyTickets from './pages/user/MyTickets';
+import GeneratedTicketsView from './pages/user/GeneratedTicketsView';
+import BulkPrint from './pages/user/BulkPrint';
+import UserReports from './pages/user/Reports';
+import Scanner from './pages/Scanner';
+import CustomerDetails from './pages/admin/CustomerDetails';
+import Customers from './pages/admin/Customers';
+import CustomerDetail from './pages/admin/CustomerDetail';
+import Users from './pages/admin/Users';
+import Flow2Step1 from './pages/admin/Flow2Step1';
+import Flow2Step2 from './pages/user/Flow2Step2';
+import SalaryLoans from './pages/admin/SalaryLoans';
+import Invoices from './pages/admin/Invoices';
+import Receipts from './pages/admin/Receipts';
+import DailySettlement from './pages/admin/DailySettlement';
+import Refunds from './pages/admin/Refunds';
+import Coupons from './pages/admin/Coupons';
+
+function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!allowedRoles.includes(user.role as string)) {
+    return <Navigate to={user.role === 'Admin' || user.role === 'Accountant' ? '/admin' : '/user'} replace />;
+  }
+  return <>{children}</>;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+
+          {/* Admin + Accountant Routes */}
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={['Admin', 'Accountant']}><AdminLayout /></ProtectedRoute>}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="generate" element={<GenerateTicket />} />
+            <Route path="success/:txId" element={<GeneratedTicketsView />} />
+            <Route path="campaigns" element={<CampaignSetup />} />
+            <Route path="packages" element={<PackageSetup />} />
+            <Route path="approvals" element={<PendingApprovals />} />
+            <Route path="audit" element={<AuditLogs />} />
+            <Route path="bulk-print" element={<BulkPrint />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="accounts" element={<Accounts />} />
+            <Route path="scanner" element={<Scanner />} />
+            <Route path="customers" element={<Customers />} />
+            <Route path="customers/:mobile" element={<CustomerDetail />} />
+            <Route path="tickets/:ticketId" element={<CustomerDetails />} />
+            <Route path="users" element={<Users />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="salary-loans" element={<SalaryLoans />} />
+            <Route path="invoices" element={<Invoices />} />
+            <Route path="receipts" element={<Receipts />} />
+            <Route path="settlement" element={<DailySettlement />} />
+            <Route path="refunds" element={<Refunds />} />
+            <Route path="coupons" element={<Coupons />} />
+            <Route path="flow2/step1" element={<Flow2Step1 />} />
+            <Route path="flow2/step2" element={<Flow2Step2 />} />
+          </Route>
+
+          {/* User Routes */}
+          <Route path="/user" element={<ProtectedRoute allowedRoles={['User']}><UserLayout /></ProtectedRoute>}>
+            <Route index element={<UserDashboard />} />
+            <Route path="generate" element={<GenerateTicket />} />
+            <Route path="success/:txId" element={<GeneratedTicketsView />} />
+            <Route path="bulk-print" element={<BulkPrint />} />
+            <Route path="tickets" element={<MyTickets />} />
+            <Route path="reports" element={<UserReports />} />
+            <Route path="scanner" element={<Scanner />} />
+            <Route path="accounts" element={<Accounts />} />
+            <Route path="flow2/step2" element={<Flow2Step2 />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
