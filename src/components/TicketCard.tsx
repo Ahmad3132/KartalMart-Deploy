@@ -26,11 +26,7 @@ export const TicketCard = React.forwardRef<HTMLDivElement, TicketCardProps>(
         {/* Header bar */}
         <div className="bg-[#1a2b4b] px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src={kartalLogo} alt="Kartal" className="h-10 w-10 object-contain" />
-            <div>
-              <p className="text-white font-black text-base tracking-widest" style={{ fontFamily: 'serif' }}>KARTAL MART</p>
-              <p className="text-[#A48655] text-[9px] tracking-widest uppercase font-semibold">Group of Companies</p>
-            </div>
+            <img src={kartalLogo} alt="Kartal" className="h-10 object-contain" style={{ filter: 'brightness(0) invert(1)' }} />
           </div>
           <div className="text-right">
             <p className="text-[#A48655] text-[10px] uppercase tracking-wider font-bold">KARTAL MART</p>

@@ -90,7 +90,7 @@ export function buildTicketHTML(ticket: TicketData, logoB64: string, defaults: P
   const time = new Date(ticket.date).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true });
 
   const logoTag = logoB64
-    ? `<img src="${logoB64}" style="width:22mm;height:16mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
+    ? `<img src="${logoB64}" style="height:14mm;object-fit:contain;${isBW ? 'filter:grayscale(100%);' : ''}">`
     : '';
 
   const qrData = JSON.stringify({ id: ticket.ticket_id, name: ticket.name, tx: ticket.tx_id, gen: ticket.generation_id });
@@ -113,8 +113,7 @@ export function buildTicketHTML(ticket: TicketData, logoB64: string, defaults: P
   <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:2mm;margin-bottom:2mm;">
     ${logoTag}
     <div style="text-align:right;">
-      <div style="font-size:13px;font-weight:900;letter-spacing:1.5px;font-family:Georgia,serif;line-height:1.1;">KARTAL MART</div>
-      <div style="font-size:7px;letter-spacing:1.5px;margin-top:1px;">GROUP OF COMPANIES</div>
+      <div style="font-size:7px;letter-spacing:1.5px;">GROUP OF COMPANIES</div>
     </div>
   </div>
   <div style="text-align:center;background:#000;color:#fff;padding:1.5mm;margin-bottom:1.5mm;">
