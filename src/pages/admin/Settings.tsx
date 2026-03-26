@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, MessageSquare, Users, Package, Activity,
   Plus, Edit2, Trash2, X, Search, CheckCircle, AlertCircle, Calendar,
-  ToggleLeft, ToggleRight, Shield, Globe } from 'lucide-react';
+  ToggleLeft, ToggleRight, Shield, Globe, HardDrive, Send, Smartphone } from 'lucide-react';
 
 const h = () => ({ 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` });
 const hj = () => ({ ...h(), 'Content-Type': 'application/json' });
@@ -10,7 +10,6 @@ export default function Settings() {
   const [tab, setTab] = useState<'profile'|'system'|'inventory'|'marketing'>('profile');
   const [subTab, setSubTab] = useState('');
   const [settings, setSettings] = useState<any>({});
-  const [users, setUsers]     = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [roles, setRoles]     = useState<any[]>([]);
@@ -20,10 +19,11 @@ export default function Settings() {
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
   const [success, setSuccess] = useState('');
-  const [search, setSearch]   = useState('');
+  const [storage, setStorage] = useState<any>(null);
+  const [cleanupDays, setCleanupDays] = useState(30);
+  const [whatsappTesting, setWhatsappTesting] = useState(false);
 
   // Modals
-  const [userModal, setUserModal]     = useState(false);
   const [pkgModal, setPkgModal]       = useState(false);
   const [campModal, setCampModal]     = useState(false);
   const [roleModal, setRoleModal]     = useState(false);
@@ -34,7 +34,7 @@ export default function Settings() {
 
   // Reset sub-tab when main tab changes
   useEffect(() => {
-    if (tab === 'system') setSubTab('users');
+    if (tab === 'system') setSubTab('global');
     else if (tab === 'inventory') setSubTab('packages');
     else setSubTab('');
   }, [tab]);
@@ -42,9 +42,8 @@ export default function Settings() {
   async function load() {
     setLoading(true); setError('');
     try {
-      const [s,u,p,c,r,sms,me] = await Promise.all([
+      const [s,p,c,r,sms,me] = await Promise.all([
         fetch('/api/settings',      { headers: h() }).then(r=>r.json()).catch(()=>({})),
-        fetch('/api/users',         { headers: h() }).then(r=>r.json()).catch(()=>[]),
         fetch('/api/packages',      { headers: h() }).then(r=>r.json()).catch(()=>[]),
         fetch('/api/campaigns',     { headers: h() }).then(r=>r.json()).catch(()=>[]),
         fetch('/api/roles',         { headers: h() }).then(r=>r.json()).catch(()=>[]),
@@ -52,7 +51,6 @@ export default function Settings() {
         fetch('/api/users/me',      { headers: h() }).then(r=>r.json()).catch(()=>null),
       ]);
       setSettings(s?.error ? {} : s);
-      setUsers(Array.isArray(u) ? u : []);
       setPackages(Array.isArray(p) ? p : []);
       setCampaigns(Array.isArray(c) ? c : []);
       setRoles(Array.isArray(r) ? r : []);
@@ -60,6 +58,40 @@ export default function Settings() {
       setMe(me);
     } catch(e:any) { setError(e.message); }
     finally { setLoading(false); }
+  }
+
+  async function loadStorage() {
+    try {
+      const data = await fetch('/api/admin/storage', { headers: h() }).then(r=>r.json());
+      setStorage(data);
+    } catch {}
+  }
+
+  async function testWhatsApp() {
+    setWhatsappTesting(true);
+    try {
+      const r = await fetch('/api/whatsapp/test', { method: 'POST', headers: hj() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      toast('WhatsApp connection successful!');
+    } catch (e: any) { toast(e.message || 'WhatsApp test failed', true); }
+    finally { setWhatsappTesting(false); }
+  }
+
+  async function cleanupVideos() {
+    if (!window.confirm(`Delete all videos older than ${cleanupDays} days? This cannot be undone.`)) return;
+    try {
+      const r = await fetch(`/api/admin/cleanup/videos?days=${cleanupDays}`, { method: 'DELETE', headers: h() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      toast(`Deleted ${d.deletedCount || 0} old videos`);
+      loadStorage();
+    } catch (e: any) { toast(e.message || 'Cleanup failed', true); }
+  }
+
+  async function saveSetting(key: string, value: string) {
+    await fetch('/api/settings', { method: 'PUT', headers: hj(), body: JSON.stringify({ key, value }) });
+    setSettings((s: any) => ({ ...s, [key]: value }));
   }
 
   function toast(msg: string, isError?: boolean) { if(isError){setError(msg);setTimeout(()=>setError(''),3000);} else {setSuccess(msg);setTimeout(()=>setSuccess(''),3000);} }
@@ -75,20 +107,6 @@ export default function Settings() {
     const fd = new FormData(e.currentTarget);
     await fetch('/api/users/profile', { method:'PUT', headers:h(), body:fd });
     setSaving(false); load(); toast('Profile saved!');
-  }
-
-  async function saveUser(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const d:any = Object.fromEntries(fd);
-    ['whatsapp_redirect_enabled','whatsapp_integration_enabled','multi_person_logic_enabled',
-     'duplicate_tx_enabled','require_all_approvals','whatsapp_redirect_after_scan'].forEach(k=>{
-      d[k] = !!fd.get(k);
-    });
-    const method = editing ? 'PUT' : 'POST';
-    const url = editing ? `/api/users/${editing.email}` : '/api/users';
-    await fetch(url, { method, headers:hj(), body:JSON.stringify(d) });
-    setUserModal(false); setEditing(null); load(); toast('User saved!');
   }
 
   async function savePkg(e: React.FormEvent<HTMLFormElement>) {
@@ -140,12 +158,6 @@ export default function Settings() {
     load();
   }
 
-  const filteredUsers = users.filter(u=>
-    (u.name||'').toLowerCase().includes(search.toLowerCase()) ||
-    (u.email||'').toLowerCase().includes(search.toLowerCase()) ||
-    (u.role||'').toLowerCase().includes(search.toLowerCase())
-  );
-
   if (loading) return (
     <div className="flex items-center justify-center min-h-[300px]">
       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"/>
@@ -179,7 +191,7 @@ export default function Settings() {
     <div className="space-y-6 pb-10">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage users, system settings, inventory and marketing.</p>
+        <p className="text-sm text-gray-500 mt-1">System settings, inventory, and marketing.</p>
       </div>
 
       {/* Toast messages */}
@@ -270,66 +282,14 @@ export default function Settings() {
         {/* ── SYSTEM ── */}
         {tab==='system' && (
           <div>
-            <div className="flex border-b border-gray-100">
-              {['users','roles','global'].map(s=>(
-                <button key={s} onClick={()=>setSubTab(s)}
-                  className={`px-5 py-3.5 text-sm font-medium border-b-2 transition-all capitalize ${subTab===s?'border-indigo-600 text-indigo-600':'border-transparent text-gray-400 hover:text-gray-700'}`}>
+            <div className="flex border-b border-gray-100 overflow-x-auto">
+              {['global','roles','whatsapp','storage'].map(s=>(
+                <button key={s} onClick={()=>{setSubTab(s); if(s==='storage') loadStorage();}}
+                  className={`px-5 py-3.5 text-sm font-medium border-b-2 transition-all capitalize whitespace-nowrap ${subTab===s?'border-indigo-600 text-indigo-600':'border-transparent text-gray-400 hover:text-gray-700'}`}>
                   {s}
                 </button>
               ))}
             </div>
-
-            {subTab==='users' && (
-              <div className="p-5">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-3">
-                  <h3 className="text-base font-bold text-gray-900">Users ({users.length})</h3>
-                  <div className="flex gap-2 w-full sm:w-auto">
-                    <div className="relative flex-1 sm:w-56">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400"/>
-                      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." className="field pl-9 py-2"/>
-                    </div>
-                    <button onClick={()=>{setEditing(null);setUserModal(true);}} className="btn-primary whitespace-nowrap"><Plus className="w-4 h-4 mr-1.5"/>Add User</button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50"><tr>
-                      {['User','Nick','Role','Status','Actions'].map(h=>(
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {filteredUsers.map(u=>(
-                        <tr key={u.email} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2.5">
-                              <img src={u.profile_picture||`https://ui-avatars.com/api/?name=${encodeURIComponent(u.name||u.email)}&background=random`} className="w-8 h-8 rounded-full object-cover" alt=""/>
-                              <div><p className="font-semibold text-gray-900 text-xs">{u.name||'—'}</p><p className="text-[10px] text-gray-400">{u.email}</p></div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-500">{u.nick_name||'—'}</td>
-                          <td className="px-4 py-3 text-xs text-gray-500">{u.role}</td>
-                          <td className="px-4 py-3">
-                            <button onClick={async()=>{
-                              await fetch(`/api/users/${u.email}`,{method:'PUT',headers:hj(),body:JSON.stringify({...u,status:u.status==='Active'?'Disabled':'Active'})});
-                              load();
-                            }} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${u.status==='Active'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>
-                              {u.status}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <button onClick={()=>{setEditing(u);setUserModal(true);}} className="text-indigo-400 hover:text-indigo-600"><Edit2 className="w-4 h-4"/></button>
-                              <button onClick={()=>{if(window.confirm(`Delete ${u.email}?`)) del(`/api/users/${u.email}`);}} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
             {subTab==='global' && (
               <div className="p-5 space-y-6">
@@ -341,6 +301,7 @@ export default function Settings() {
                     <Toggle k="duplicate_tx_enabled"  label="Allow Duplicate TX IDs" desc="Users can reuse the same transaction ID." icon={Activity}/>
                     <Toggle k="whatsapp_enabled"       label="WhatsApp Sharing" desc="Enable WhatsApp ticket sharing buttons." icon={MessageSquare}/>
                     <Toggle k="allow_multiple_active_campaigns" label="Multiple Active Campaigns" desc="Allow more than one campaign to be active simultaneously." icon={Activity}/>
+                    <Toggle k="easypaisa_receipt_mandatory" label="Receipt Mandatory" desc="Require EasyPaisa receipt upload for all online transactions." icon={Shield}/>
                   </div>
                 </div>
                 <div className="border-t border-gray-100 pt-5">
@@ -428,6 +389,80 @@ export default function Settings() {
                     );
                   })}
                   {roles.length===0 && <p className="text-center py-10 text-gray-400 text-sm">No custom roles yet.</p>}
+                </div>
+              </div>
+            )}
+
+            {subTab==='whatsapp' && (
+              <div className="p-5 space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 mb-3">WhatsApp Cloud API</h3>
+                  <p className="text-xs text-gray-500 mb-4">Configure Meta WhatsApp Business Cloud API for automated ticket delivery. Requires a Meta Business account.</p>
+                  <div className="space-y-3">
+                    <Toggle k="whatsapp_api_enabled" label="Enable WhatsApp API" desc="Use official API instead of wa.me redirect links." icon={Smartphone}/>
+                  </div>
+                </div>
+                {settings.whatsapp_api_enabled === 'true' && (
+                  <div className="border-t border-gray-100 pt-5 space-y-4">
+                    <div>
+                      <label className="field-label">API Access Token</label>
+                      <input type="password" defaultValue={settings.whatsapp_api_token || ''} onBlur={e => saveSetting('whatsapp_api_token', e.target.value)}
+                        className="field" placeholder="EAAxxxxxxx..." />
+                    </div>
+                    <div>
+                      <label className="field-label">Phone Number ID</label>
+                      <input defaultValue={settings.whatsapp_phone_number_id || ''} onBlur={e => saveSetting('whatsapp_phone_number_id', e.target.value)}
+                        className="field" placeholder="1234567890" />
+                    </div>
+                    <button onClick={testWhatsApp} disabled={whatsappTesting}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                      <Send className="w-4 h-4" /> {whatsappTesting ? 'Testing...' : 'Test Connection'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {subTab==='storage' && (
+              <div className="p-5 space-y-6">
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 mb-3">Storage Management</h3>
+                  <p className="text-xs text-gray-500 mb-4">Monitor and manage disk usage. Videos and receipts consume the most space.</p>
+                  {!storage ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"/>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="p-4 border border-gray-100 rounded-xl bg-gray-50">
+                        <div className="flex items-center gap-2 mb-2"><HardDrive className="w-4 h-4 text-indigo-500"/><span className="text-xs font-bold text-gray-400 uppercase">Database</span></div>
+                        <p className="text-lg font-black text-gray-900">{storage.database || 'N/A'}</p>
+                      </div>
+                      <div className="p-4 border border-gray-100 rounded-xl bg-gray-50">
+                        <div className="flex items-center gap-2 mb-2"><HardDrive className="w-4 h-4 text-emerald-500"/><span className="text-xs font-bold text-gray-400 uppercase">Videos</span></div>
+                        <p className="text-lg font-black text-gray-900">{storage.videos || 'N/A'}</p>
+                        <p className="text-xs text-gray-400">{storage.videoCount || 0} files</p>
+                      </div>
+                      <div className="p-4 border border-gray-100 rounded-xl bg-gray-50">
+                        <div className="flex items-center gap-2 mb-2"><HardDrive className="w-4 h-4 text-orange-500"/><span className="text-xs font-bold text-gray-400 uppercase">Receipts</span></div>
+                        <p className="text-lg font-black text-gray-900">{storage.receipts || 'N/A'}</p>
+                        <p className="text-xs text-gray-400">{storage.receiptCount || 0} files</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-gray-100 pt-5">
+                  <h3 className="text-base font-bold text-gray-900 mb-3">Cleanup Old Videos</h3>
+                  <p className="text-xs text-gray-500 mb-3">Delete delivery videos older than a certain number of days to free disk space.</p>
+                  <div className="flex items-center gap-3">
+                    <input type="number" min={7} max={365} value={cleanupDays} onChange={e => setCleanupDays(Number(e.target.value))}
+                      className="field w-24" />
+                    <span className="text-sm text-gray-500">days old</span>
+                    <button onClick={cleanupVideos}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700">
+                      <Trash2 className="w-4 h-4" /> Delete Old Videos
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -528,50 +563,6 @@ export default function Settings() {
       </div>
 
       {/* ══ MODALS ══ */}
-
-      {userModal && (
-        <Modal title={editing?'Edit User':'Add User'} onClose={()=>{setUserModal(false);setEditing(null);}}>
-          <form onSubmit={saveUser} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="field-label">Full Name</label><input name="name" required defaultValue={editing?.name} className="field"/></div>
-              <div><label className="field-label">Nick Name</label><input name="nick_name" defaultValue={editing?.nick_name} className="field"/></div>
-            </div>
-            <div><label className="field-label">Email</label><input name="email" type="email" required defaultValue={editing?.email} disabled={!!editing} className="field"/></div>
-            {!editing && <div><label className="field-label">Password</label><input name="password" type="password" required className="field"/></div>}
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="field-label">Role</label>
-                <select name="role" defaultValue={editing?.role||'User'} className="field">
-                  <option value="Admin">Admin</option>
-                  <option value="User">User</option>
-                  {roles.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}
-                </select>
-              </div>
-              <div><label className="field-label">Status</label>
-                <select name="status" defaultValue={editing?.status||'Active'} className="field">
-                  <option value="Active">Active</option>
-                  <option value="Disabled">Disabled</option>
-                </select>
-              </div>
-            </div>
-            <div className="border-t pt-3 space-y-2">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Permissions</p>
-              {[
-                ['whatsapp_integration_enabled','WhatsApp Integration'],
-                ['multi_person_logic_enabled','Multi-Person Transactions'],
-                ['duplicate_tx_enabled','Allow Duplicate TX IDs'],
-                ['require_all_approvals','Require All Approvals'],
-                ['whatsapp_redirect_after_scan','WhatsApp Redirect After Scan'],
-              ].map(([id,label])=>(
-                <label key={id} className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" name={id} id={id} defaultChecked={editing ? editing[id]===1 : true} className="h-4 w-4 rounded text-indigo-600"/>
-                  <span className="text-sm text-gray-700">{label}</span>
-                </label>
-              ))}
-            </div>
-            <button type="submit" className="btn-primary w-full mt-2">Save User</button>
-          </form>
-        </Modal>
-      )}
 
       {roleModal && (
         <Modal title={editing?'Edit Role':'Add Role'} onClose={()=>{setRoleModal(false);setEditing(null);}}>

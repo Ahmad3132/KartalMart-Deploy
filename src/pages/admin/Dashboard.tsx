@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Users, Ticket, CheckCircle, Activity, Printer, Eye, Search, AlertCircle, Edit2, Send, FileDown, TrendingUp, DollarSign, UserPlus, PieChart as PieChartIcon, BarChart as BarChartIcon, MessageSquare, ArrowRight, Clock, ShieldCheck } from 'lucide-react';
+import { Users, Ticket, CheckCircle, Activity, Printer, Eye, Search, AlertCircle, Edit2, Send, FileDown, TrendingUp, DollarSign, UserPlus, PieChart as PieChartIcon, BarChart as BarChartIcon, MessageSquare, ArrowRight, Clock, ShieldCheck, ScanLine, Video, PackageCheck } from 'lucide-react';
 import { handleResponse, formatWANumber } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
@@ -30,6 +30,7 @@ export default function AdminDashboard() {
   const ticketRef = useRef<HTMLDivElement>(null);
   const [pdfTicket, setPdfTicket] = useState<any>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [lifecycleStats, setLifecycleStats] = useState<any>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsMounted(true), 500);
@@ -46,9 +47,10 @@ export default function AdminDashboard() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [currentPage, statusFilter, searchTerm, startDate, endDate]);
 
-  // Graph data only needs to load once
+  // Graph data + lifecycle stats only need to load once
   useEffect(() => {
     fetchGraphData();
+    fetchLifecycleStats();
   }, []);
 
   const fetchData = async () => {
@@ -97,6 +99,15 @@ export default function AdminDashboard() {
       console.error('Failed to fetch graph data:', err);
       setGraphData({ revenue: [], onlineVsOffline: [], sales: [], growth: [] });
     }
+  };
+
+  const fetchLifecycleStats = async () => {
+    try {
+      const res = await fetch('/api/admin/lifecycle-stats', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
+      });
+      if (res.ok) setLifecycleStats(await res.json());
+    } catch {}
   };
 
   const handleSendPDF = async (ticket: any) => {
@@ -291,6 +302,31 @@ export default function AdminDashboard() {
           );
         })}
       </div>
+
+      {/* Lifecycle Overview */}
+      {lifecycleStats && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <PackageCheck className="w-5 h-5 text-indigo-600" />
+            Ticket Lifecycle Overview
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            {[
+              { label: 'Generated', count: lifecycleStats.generated || 0, icon: Ticket, color: 'text-gray-600', bg: 'bg-gray-50' },
+              { label: 'Scanned', count: lifecycleStats.scanned || 0, icon: ScanLine, color: 'text-blue-600', bg: 'bg-blue-50' },
+              { label: 'Video Uploaded', count: lifecycleStats.video_uploaded || 0, icon: Video, color: 'text-purple-600', bg: 'bg-purple-50' },
+              { label: 'Sent', count: lifecycleStats.sent || 0, icon: Send, color: 'text-orange-600', bg: 'bg-orange-50' },
+              { label: 'Confirmed', count: lifecycleStats.confirmed || 0, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
+            ].map(s => (
+              <div key={s.label} className={`${s.bg} rounded-xl p-4 text-center`}>
+                <s.icon className={`w-5 h-5 mx-auto mb-1 ${s.color}`} />
+                <p className="text-2xl font-black text-gray-900">{s.count}</p>
+                <p className="text-xs font-medium text-gray-500">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

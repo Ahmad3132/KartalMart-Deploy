@@ -302,6 +302,21 @@ _Kartal Group of Companies_`;
               </div>
             </div>
 
+            {/* Lifecycle status */}
+            {ticket.lifecycle_status && ticket.lifecycle_status !== 'generated' && (
+              <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  ticket.lifecycle_status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                  ticket.lifecycle_status === 'sent' ? 'bg-blue-100 text-blue-700' :
+                  ticket.lifecycle_status === 'video_uploaded' ? 'bg-purple-100 text-purple-700' :
+                  ticket.lifecycle_status === 'scanned' ? 'bg-indigo-100 text-indigo-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>
+                  {ticket.lifecycle_status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                </span>
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="px-4 py-3 flex flex-wrap gap-2 no-print">
               <button

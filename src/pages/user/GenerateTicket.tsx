@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Ticket, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Ticket, AlertCircle, CheckCircle, ArrowLeft, ScanLine, Check, X as XIcon } from 'lucide-react';
+import { extractReceiptData, compareTransactionIds, type ReceiptData } from '../../utils/ocrReceipt';
 
 export default function GenerateTicket() {
   const { user } = useAuth();
@@ -9,13 +10,18 @@ export default function GenerateTicket() {
   const [packages, setPackages] = useState<any[]>([]);
   const [activeCampaign, setActiveCampaign] = useState<any>(null);
   const [selectedPackage, setSelectedPackage] = useState<any>(null);
-  
+
   const [settings, setSettings] = useState<any>({});
-  
+
   const [txId, setTxId] = useState('');
   const [paymentType, setPaymentType] = useState<'ONLINE' | 'CASH'>('ONLINE');
   const [receiptUrl, setReceiptUrl] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+
+  // OCR state
+  const [ocrData, setOcrData] = useState<ReceiptData | null>(null);
+  const [ocrScanning, setOcrScanning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [isMultiPerson, setIsMultiPerson] = useState(false);
   const [sameMobileForAll, setSameMobileForAll] = useState(false);
   const [sameAddressForAll, setSameAddressForAll] = useState(false);
@@ -95,12 +101,40 @@ export default function GenerateTicket() {
     loadData();
   }, [user]);
 
+  const handleReceiptUpload = async (file: File) => {
+    setReceiptFile(file);
+    setOcrData(null);
+    if (!file.type.startsWith('image/')) return; // OCR only for images
+    setOcrScanning(true);
+    setOcrProgress(0);
+    try {
+      const data = await extractReceiptData(file, (p) => setOcrProgress(Math.round(p * 100)));
+      setOcrData(data);
+      if (data.txId && !txId) {
+        setTxId(data.txId);
+      }
+    } catch {
+      // OCR failed silently — user can still enter manually
+    } finally {
+      setOcrScanning(false);
+    }
+  };
+
+  const ocrMatch = ocrData && txId ? compareTransactionIds(txId, ocrData.txId) : null;
+
+  const receiptMandatory = paymentType === 'ONLINE' && settings.easypaisa_receipt_mandatory === 'true';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
-    
+
     if (!selectedPackage) {
       setMessage({ type: 'error', text: 'Please select a package' });
+      return;
+    }
+
+    if (receiptMandatory && !receiptFile && !receiptUrl) {
+      setMessage({ type: 'error', text: 'Receipt upload is mandatory for online payments. Please upload your EasyPaisa receipt.' });
       return;
     }
 
@@ -116,9 +150,21 @@ export default function GenerateTicket() {
       formData.append('name', isMultiPerson ? '' : name);
       formData.append('mobile', isMultiPerson ? '' : mobile);
       formData.append('address', isMultiPerson ? '' : address);
-      
+
       if (receiptFile) {
         formData.append('receipt', receiptFile);
+      }
+
+      // Append OCR data if available
+      if (ocrData) {
+        formData.append('ocr_tx_id', ocrData.txId || '');
+        formData.append('ocr_amount', ocrData.amount || '');
+        formData.append('ocr_date', ocrData.date || '');
+        formData.append('ocr_send_to', ocrData.sendTo || '');
+        formData.append('ocr_sent_by', ocrData.sentBy || '');
+        formData.append('ocr_account_details', ocrData.accountDetails || '');
+        formData.append('ocr_match_status', ocrMatch || 'no_ocr');
+        formData.append('ocr_raw_text', ocrData.rawText || '');
       }
 
       const res = await fetch('/api/transactions', {
@@ -247,7 +293,7 @@ export default function GenerateTicket() {
               {paymentType === 'ONLINE' && (
                 <div className="sm:col-span-2 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Receipt URL (Optional)</label>
+                    <label className="block text-sm font-medium text-gray-700">Receipt URL {receiptMandatory ? '' : '(Optional)'}</label>
                     <input
                       type="url"
                       value={receiptUrl}
@@ -257,14 +303,66 @@ export default function GenerateTicket() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Upload Receipt (Optional)</label>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Upload Receipt {receiptMandatory ? <span className="text-red-500">*</span> : '(Optional)'}
+                    </label>
                     <input
                       type="file"
                       accept="image/*,application/pdf"
-                      onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleReceiptUpload(file);
+                      }}
                       className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
                     />
+                    {receiptMandatory && !receiptFile && !receiptUrl && (
+                      <p className="mt-1 text-xs text-red-500">Receipt is required for online payments.</p>
+                    )}
                   </div>
+
+                  {/* OCR Scanning Progress */}
+                  {ocrScanning && (
+                    <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ScanLine className="w-4 h-4 text-indigo-600 animate-pulse" />
+                        <span className="text-sm font-medium text-indigo-700">Scanning receipt...</span>
+                      </div>
+                      <div className="w-full bg-indigo-100 rounded-full h-2">
+                        <div className="bg-indigo-600 h-2 rounded-full transition-all duration-300" style={{ width: `${ocrProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OCR Results Preview */}
+                  {ocrData && !ocrScanning && (
+                    <div className={`p-3 rounded-lg border ${
+                      ocrMatch === 'match' ? 'bg-green-50 border-green-200' :
+                      ocrMatch === 'mismatch' ? 'bg-orange-50 border-orange-200' :
+                      'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        {ocrMatch === 'match' && <Check className="w-4 h-4 text-green-600" />}
+                        {ocrMatch === 'mismatch' && <AlertCircle className="w-4 h-4 text-orange-600" />}
+                        {!ocrMatch && <ScanLine className="w-4 h-4 text-gray-600" />}
+                        <span className={`text-sm font-semibold ${
+                          ocrMatch === 'match' ? 'text-green-700' :
+                          ocrMatch === 'mismatch' ? 'text-orange-700' :
+                          'text-gray-700'
+                        }`}>
+                          {ocrMatch === 'match' ? 'TX ID matches receipt' :
+                           ocrMatch === 'mismatch' ? 'TX ID does not match receipt — will be flagged' :
+                           'Receipt scanned'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                        {ocrData.txId && <div><span className="font-medium">TX ID:</span> {ocrData.txId}</div>}
+                        {ocrData.amount && <div><span className="font-medium">Amount:</span> {ocrData.amount}</div>}
+                        {ocrData.date && <div><span className="font-medium">Date:</span> {ocrData.date}</div>}
+                        {ocrData.sendTo && <div><span className="font-medium">Send To:</span> {ocrData.sendTo}</div>}
+                        {ocrData.sentBy && <div><span className="font-medium">Sent By:</span> {ocrData.sentBy}</div>}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

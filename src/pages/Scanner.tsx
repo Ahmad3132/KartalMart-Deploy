@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Ticket, User, Phone, MapPin, Calendar, CheckCircle, XCircle, MessageSquare, Camera, CameraOff } from 'lucide-react';
 import { formatWANumber } from '../utils/api';
+import TicketLifecycle from '../components/TicketLifecycle';
 
 export default function Scanner() {
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -9,6 +10,7 @@ export default function Scanner() {
   const [loading, setLoading] = useState(false);
   const [cameraFailed, setCameraFailed] = useState(false);
   const [scannerReady, setScannerReady] = useState(false);
+  const [lifecycleData, setLifecycleData] = useState<any>(null);
   const scannerRef = useRef<any>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
 
@@ -74,11 +76,35 @@ export default function Scanner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ticket not found');
       setTicketData(data.ticket);
+      fetchLifecycle(ticketId);
     } catch (err: any) {
       setError(err.message);
       setTicketData(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLifecycle = async (ticketId: string) => {
+    try {
+      const res = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/lifecycle`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('kartal_token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLifecycleData(data.lifecycle || data);
+      } else {
+        // Lifecycle may not exist yet for older tickets, default to generated
+        setLifecycleData({ lifecycle_status: 'generated' });
+      }
+    } catch {
+      setLifecycleData({ lifecycle_status: 'generated' });
+    }
+  };
+
+  const handleLifecycleUpdate = () => {
+    if (scanResult) {
+      fetchLifecycle(scanResult);
     }
   };
 
@@ -103,6 +129,7 @@ export default function Scanner() {
     setTicketData(null);
     setScanResult(null);
     setError(null);
+    setLifecycleData(null);
     window.location.reload();
   };
 
@@ -172,6 +199,7 @@ export default function Scanner() {
       )}
 
       {ticketData && (
+        <>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className={`p-4 ${ticketData.printed_count > 0 ? 'bg-green-600' : 'bg-indigo-600'} text-white flex justify-between items-center`}>
             <div>
@@ -259,6 +287,14 @@ export default function Scanner() {
             </div>
           </div>
         </div>
+
+        {/* Ticket Lifecycle Tracking */}
+        <TicketLifecycle
+          ticketId={ticketData.ticket_id}
+          lifecycle={lifecycleData}
+          onLifecycleUpdate={handleLifecycleUpdate}
+        />
+        </>
       )}
     </div>
   );
